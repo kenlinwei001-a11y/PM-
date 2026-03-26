@@ -15,11 +15,13 @@ export interface GraphNode {
   name: string;
   duration: number;
   resources: string[];
+  machines?: string[];
   materials: string[];
   rules: string[];
   plannedCost: CostBreakdown;
   status: 'not_started' | 'running' | 'completed' | 'delayed';
   riskScore?: number;
+  subTasks?: { id: string; name: string; duration: number; status: string }[];
   // Calculated fields for Critical Path Method
   es?: number; // Early Start
   ef?: number; // Early Finish
@@ -99,6 +101,7 @@ export const mockGraph: ProjectGraph = {
       name: "设计与准备",
       duration: 5,
       resources: ["R_ENG_01"],
+      machines: ["PC_CAD_01"],
       materials: [],
       rules: ["COST_DESIGN"],
       plannedCost: { material: 0, labor: 5000, equipment: 1000, overhead: 500, energy: 200, total: 6700 },
@@ -112,11 +115,18 @@ export const mockGraph: ProjectGraph = {
       name: "焊接工序",
       duration: 10,
       resources: ["R_WELD_01"],
+      machines: ["WELD_ROBOT_A", "WELD_MANUAL_B"],
       materials: ["M_STEEL"],
       rules: ["RULE_WELD_TIME", "RULE_ENERGY_WELD"],
       plannedCost: { material: 15000, labor: 8000, equipment: 4000, overhead: 1000, energy: 3000, total: 31000 },
       status: "running",
       riskScore: 60,
+      subTasks: [
+        { id: "N1-1", name: "焊接准备", duration: 2, status: "completed" },
+        { id: "N1-2", name: "主焊接", duration: 5, status: "running" },
+        { id: "N1-3", name: "焊后处理", duration: 2, status: "not_started" },
+        { id: "N1-4", name: "UT检测", duration: 1, status: "not_started" }
+      ],
       es: 5, ef: 15, ls: 5, lf: 15, isCritical: true
     },
     {
@@ -125,11 +135,17 @@ export const mockGraph: ProjectGraph = {
       name: "CNC机加工",
       duration: 8,
       resources: ["R_CNC_01"],
+      machines: ["CNC_5AXIS_01"],
       materials: ["M_ALLOY"],
       rules: ["RULE_DEPRECIATION"],
       plannedCost: { material: 12000, labor: 6000, equipment: 8000, overhead: 1500, energy: 2500, total: 30000 },
       status: "not_started",
       riskScore: 20,
+      subTasks: [
+        { id: "N2-1", name: "编程与对刀", duration: 2, status: "not_started" },
+        { id: "N2-2", name: "粗加工", duration: 4, status: "not_started" },
+        { id: "N2-3", name: "精加工", duration: 2, status: "not_started" }
+      ],
       es: 5, ef: 13, ls: 7, lf: 15, isCritical: false
     },
     {
@@ -138,6 +154,7 @@ export const mockGraph: ProjectGraph = {
       name: "总装测试",
       duration: 7,
       resources: ["R_ASSY_01", "R_TEST_01"],
+      machines: ["TEST_RIG_01"],
       materials: [],
       rules: ["RULE_PRESSURE_VESSEL", "RULE_COMPLIANCE"],
       plannedCost: { material: 2000, labor: 10000, equipment: 3000, overhead: 800, energy: 1000, total: 16800 },

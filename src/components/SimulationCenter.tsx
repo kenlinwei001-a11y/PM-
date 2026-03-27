@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
-import { Play, Activity, AlertTriangle, CheckCircle2, ArrowRight, Zap, TrendingDown, TrendingUp, Info, Plus, X, GitCompare, BarChart3, Clock, DollarSign, RotateCcw, Settings } from 'lucide-react';
+import { Play, Activity, AlertTriangle, CheckCircle2, ArrowRight, Zap, TrendingDown, TrendingUp, Info, Plus, X, GitCompare, BarChart3, Clock, DollarSign, RotateCcw, Settings, MessageSquare, Send, Bot, User } from 'lucide-react';
 import { Project, GraphNode } from '../types';
 import { toast } from 'sonner';
 import { useSkillStore, useNodeSkillResult } from '../store/skillStore';
@@ -23,8 +23,16 @@ interface ScenarioConfig {
   parameterOverrides: Record<string, number>;
 }
 
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  suggestions?: string[];
+}
+
 export function SimulationCenter({ project }: SimulationCenterProps) {
-  const [activeTab, setActiveTab] = useState<'setup' | 'results'>('setup');
+  const [activeTab, setActiveTab] = useState<'setup' | 'results' | 'chat'>('setup');
   const [isSimulating, setIsSimulating] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectAllNodes, setSelectAllNodes] = useState(false);
@@ -47,6 +55,127 @@ export function SimulationCenter({ project }: SimulationCenterProps) {
       duration: number;
     };
   }[]>([]);
+
+  // Chat states
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: 'welcome',
+      role: 'assistant',
+      content: '你好！我是推演助手。我可以帮助你：\n1. 分析不同方案的成本和周期影响\n2. 推荐最优资源配置\n3. 解释推演结果\n4. 回答关于项目的问题\n\n请问有什么可以帮助你的？',
+      timestamp: Date.now(),
+      suggestions: ['分析当前方案', '推荐优化方案', '解释成本构成']
+    }
+  ]);
+  const [inputMessage, setInputMessage] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Send message handler
+  const handleSendMessage = async () => {
+    if (!inputMessage.trim()) return;
+
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: inputMessage,
+      timestamp: Date.now()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInputMessage('');
+    setIsTyping(true);
+
+    // Simulate AI response
+    setTimeout(() => {
+      const response = generateAIResponse(inputMessage, comparisonResults, scenarios);
+      const assistantMessage: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: response.content,
+        timestamp: Date.now(),
+        suggestions: response.suggestions
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+      setIsTyping(false);
+    }, 1000 + Math.random() * 1000);
+  };
+
+  // Generate AI response based on context
+  const generateAIResponse = (
+    userInput: string,
+    results: typeof comparisonResults,
+    currentScenarios: ScenarioConfig[]
+  ): { content: string; suggestions?: string[] } => {
+    const input = userInput.toLowerCase();
+
+    // Check for specific intents
+    if (input.includes('分析') || input.includes('结果') || input.includes('对比')) {
+      if (results.length === 0) {
+        return {
+          content: '目前还没有推演结果。请先配置方案并运行推演，我就能为你分析结果了。',
+          suggestions: ['运行推演', '配置方案', '查看帮助']
+        };
+      }
+
+      const bestResult = results.filter(r => r.result).sort((a, b) => {
+        const aScore = (a.result?.totalCost || 0) + (a.result?.duration || 0) * 1000;
+        const bScore = (b.result?.totalCost || 0) + (b.result?.duration || 0) * 1000;
+        return aScore - bScore;
+      })[0];
+
+      return {
+        content: `根据当前的推演结果，我已经分析了 ${results.length} 个方案：\n\n**最优方案：${bestResult?.scenario.name}**\n- 总成本：¥${(bestResult?.result?.totalCost || 0).toLocaleString()}\n- 周期：${bestResult?.result?.duration || 0} 天\n\n与其他方案相比，该方案在成本和周期方面表现最佳。你可以点击"对比结果"标签查看详细对比。`,
+        suggestions: ['查看详细对比', '优化方案', '导出报告']
+      };
+    }
+
+    if (input.includes('推荐') || input.includes('优化') || input.includes('建议')) {
+      return {
+        content: '基于当前项目数据，我有以下优化建议：\n\n1. **资源配置**：考虑增加自动化设备资源，虽然初期成本增加，但可以显著缩短周期\n2. **并行工序**：识别可以并行执行的工序节点，减少关键路径长度\n3. **风险缓冲**：为高风险的非标工艺节点增加时间缓冲\n\n你可以创建新的方案来验证这些建议的效果。',
+        suggestions: ['创建新方案', '分析风险节点', '查看资源利用率']
+      };
+    }
+
+    if (input.includes('成本') || input.includes('价格') || input.includes('费用')) {
+      const totalCost = results.reduce((sum, r) => sum + (r.result?.totalCost || 0), 0);
+      return {
+        content: `当前推演结果的成本分析：\n\n- 基准方案成本：¥${(results[0]?.result?.totalCost || 0).toLocaleString()}\n- 所有方案平均成本：¥${totalCost > 0 ? Math.round(totalCost / results.length).toLocaleString() : '0'}\n\n成本主要由以下部分构成：\n- 人力资源成本\n- 设备使用成本\n- 物料采购成本\n- 外包加工成本\n\n你可以通过调整资源配置来优化成本结构。`,
+        suggestions: ['优化成本', '查看成本构成', '对比方案']
+      };
+    }
+
+    if (input.includes('周期') || input.includes('时间') || input.includes('工期')) {
+      const avgDuration = results.length > 0
+        ? results.reduce((sum, r) => sum + (r.result?.duration || 0), 0) / results.length
+        : 0;
+      return {
+        content: `项目周期分析：\n\n- 当前平均周期：${avgDuration.toFixed(1)} 天\n- 最短周期方案：${results.filter(r => r.result).sort((a, b) => (a.result?.duration || 0) - (b.result?.duration || 0))[0]?.scenario.name || '未计算'}\n\n缩短周期的建议：\n1. 增加关键路径上的资源投入\n2. 优化工序间的衔接，减少等待时间\n3. 对非关键路径上的任务适当延后，集中资源保证关键节点`,
+        suggestions: ['查看关键路径', '优化工期', '资源调度']
+      };
+    }
+
+    if (input.includes('帮助') || input.includes('help') || input.includes('能做什么')) {
+      return {
+        content: '我可以为你提供以下帮助：\n\n**推演分析**\n- 分析多方案对比结果\n- 推荐最优资源配置方案\n- 解释成本和周期的变化原因\n\n**决策支持**\n- 评估不同决策对项目的影响\n- 识别风险和瓶颈\n- 提供优化建议\n\n**数据解读**\n- 解释推演结果的各项指标\n- 对比不同方案的优劣\n- 生成分析报告\n\n你可以直接提问，或者点击下方的建议按钮快速开始。',
+        suggestions: ['分析当前方案', '推荐优化方案', '解释推演结果']
+      };
+    }
+
+    // Default response
+    return {
+      content: '我理解你的问题。为了更好地帮助你，能否提供更多细节？比如你想了解：\n- 当前推演方案的对比分析\n- 针对特定节点的优化建议\n- 成本和周期的详细构成\n\n或者你可以直接点击下方的建议按钮。',
+      suggestions: ['分析推演结果', '推荐优化方案', '查看成本分析']
+    };
+  };
 
   // Add new scenario
   const addScenario = () => {
@@ -239,6 +368,9 @@ export function SimulationCenter({ project }: SimulationCenterProps) {
               <TabsTrigger value="results" className="rounded-none text-xs font-mono">
                 <BarChart3 className="w-3 h-3 mr-1" /> 对比结果
               </TabsTrigger>
+              <TabsTrigger value="chat" className="rounded-none text-xs font-mono">
+                <MessageSquare className="w-3 h-3 mr-1" /> 推演助手
+              </TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -305,7 +437,8 @@ export function SimulationCenter({ project }: SimulationCenterProps) {
               onClick={handleSimulate}
               disabled={isSimulating || (!selectedNodeId && !selectAllNodes)}
               className="w-full h-12 rounded-none font-mono uppercase tracking-wider"
-            >n              {isSimulating ? (
+            >
+              {isSimulating ? (
                 <>
                   <Activity className="w-4 h-4 mr-2 animate-spin" />
                   推演中...
@@ -565,7 +698,238 @@ export function SimulationCenter({ project }: SimulationCenterProps) {
             </CardContent>
           </Card>
         </div>
-      )}
+      ) : activeTab === 'chat' ? (
+        /* Chat Tab */
+        <div className="flex-1 flex gap-4 overflow-hidden">
+          {/* Left: Chat Interface */}
+          <Card className="flex-1 rounded-none border-border shadow-none overflow-hidden flex flex-col">
+            <CardHeader className="p-3 border-b border-border bg-muted/20 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm font-mono uppercase tracking-wider flex items-center gap-2">
+                <Bot className="w-4 h-4" />
+                推演助手
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-[10px] rounded-none">
+                  AI Powered
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
+              {/* Messages */}
+              <div className="flex-1 overflow-auto p-4 space-y-4">
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+                  >
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                        message.role === 'user'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-blue-500 text-white'
+                      }`}
+                    >
+                      {message.role === 'user' ? (
+                        <User className="w-4 h-4" />
+                      ) : (
+                        <Bot className="w-4 h-4" />
+                      )}
+                    </div>
+                    <div className={`flex-1 ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
+                      <div
+                        className={`max-w-[80%] p-3 text-sm whitespace-pre-wrap ${
+                          message.role === 'user'
+                            ? 'bg-primary text-primary-foreground rounded-2xl rounded-tr-sm'
+                            : 'bg-muted rounded-2xl rounded-tl-sm'
+                        }`}
+                      >
+                        {message.content}
+                      </div>
+                      {message.suggestions && message.suggestions.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {message.suggestions.map((suggestion, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => {
+                                setInputMessage(suggestion);
+                              }}
+                              className="text-xs px-3 py-1.5 bg-background border border-border hover:border-primary hover:text-primary transition-colors rounded-full"
+                            >
+                              {suggestion}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="text-[10px] text-muted-foreground mt-1 px-1">
+                        {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {isTyping && (
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shrink-0">
+                      <Bot className="w-4 h-4" />
+                    </div>
+                    <div className="bg-muted rounded-2xl rounded-tl-sm p-3">
+                      <div className="flex gap-1">
+                        <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" />
+                        <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
+                        <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input Area */}
+              <div className="p-4 border-t border-border bg-muted/20">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    placeholder="输入消息询问推演相关问题..."
+                    className="flex-1 bg-background border border-border px-4 py-2 text-sm rounded-none focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <Button
+                    onClick={handleSendMessage}
+                    disabled={!inputMessage.trim() || isTyping}
+                    className="rounded-none px-4"
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                </div>
+                <div className="flex gap-2 mt-2 text-[10px] text-muted-foreground">
+                  <span>快捷提问:</span>
+                  {['分析推演结果', '推荐优化方案', '解释成本构成'].map((quick) => (
+                    <button
+                      key={quick}
+                      onClick={() => {
+                        setInputMessage(quick);
+                      }}
+                      className="hover:text-primary transition-colors"
+                    >
+                      {quick}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Right: Quick Actions & Context */}
+          <Card className="w-80 rounded-none border-border shadow-none overflow-hidden">
+            <CardHeader className="p-3 border-b border-border bg-muted/20">
+              <CardTitle className="text-sm font-mono uppercase tracking-wider">
+                上下文信息
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 overflow-auto space-y-4">
+              {/* Current Status */}
+              <div className="p-3 bg-muted/30 border border-border">
+                <div className="text-[10px] text-muted-foreground font-mono uppercase mb-2">当前状态</div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span>选中节点:</span>
+                    <span className="font-medium">
+                      {selectAllNodes ? '全部' : (selectedNodeId ? project.nodes.find(n => n.id === selectedNodeId)?.name || selectedNodeId : '未选择')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>方案数量:</span>
+                    <span className="font-medium">{scenarios.length} 个</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>推演状态:</span>
+                    <span className={`font-medium ${comparisonResults.length > 0 ? 'text-green-600' : 'text-muted-foreground'}`}>
+                      {comparisonResults.length > 0 ? '已完成' : '未开始'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div>
+                <div className="text-[10px] text-muted-foreground font-mono uppercase mb-2">快捷操作</div>
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full rounded-none text-xs justify-start"
+                    onClick={() => {
+                      setActiveTab('setup');
+                    }}
+                    disabled={isSimulating}
+                  >
+                    <Settings className="w-3 h-3 mr-2" />
+                    配置方案
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full rounded-none text-xs justify-start"
+                    onClick={() => {
+                      setActiveTab('results');
+                    }}
+                    disabled={comparisonResults.length === 0}
+                  >
+                    <BarChart3 className="w-3 h-3 mr-2" />
+                    查看结果
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full rounded-none text-xs justify-start"
+                    onClick={handleSimulate}
+                    disabled={isSimulating || (!selectedNodeId && !selectAllNodes)}
+                  >
+                    {isSimulating ? (
+                      <Activity className="w-3 h-3 mr-2 animate-spin" />
+                    ) : (
+                      <Play className="w-3 h-3 mr-2" />
+                    )}
+                    {isSimulating ? '推演中...' : '运行推演'}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Tips */}
+              <div className="p-3 bg-blue-50 border border-blue-200">
+                <div className="text-[10px] text-blue-600 font-mono uppercase mb-2">使用提示</div>
+                <ul className="text-xs text-blue-900 space-y-1">
+                  <li>• 可以直接询问推演结果分析</li>
+                  <li>• 点击建议按钮快速提问</li>
+                  <li>• 助手会根据当前数据给出建议</li>
+                  <li>• 运行推演后可以获得详细分析</li>
+                </ul>
+              </div>
+
+              {/* Clear Chat */}
+              {messages.length > 1 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full rounded-none text-xs text-muted-foreground hover:text-destructive"
+                  onClick={() => {
+                    setMessages([messages[0]]);
+                  }}
+                >
+                  <X className="w-3 h-3 mr-1" />
+                  清空对话
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
     </div>
   );
 }

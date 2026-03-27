@@ -1,19 +1,201 @@
-import { useState } from 'react';
-import { TaskNodePack, SixMType, SixMNode, mockTaskNodePacks } from '../types';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { TaskNodePack, SixMType, SixMNode, mockTaskNodePacks, INDUSTRIAL_RESOURCES, BINDING_RULES, ResourceCategory } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { User, Settings, Package, BookOpen, Cloud, Search, Plus, Save } from 'lucide-react';
+import { Badge } from './ui/badge';
+import {
+  User, Settings, Package, BookOpen, Cloud, Search, Plus, Save,
+  Cpu, Factory, Scale, Truck, Zap, Briefcase, Beaker, Layers,
+  Calculator, CheckCircle2, AlertTriangle, Loader2, ChevronDown, ChevronRight
+} from 'lucide-react';
 import { toast } from 'sonner';
+import { skillExecutionEngine } from '../engine/SkillExecutionEngine';
+import { skillCache } from '../engine/SkillCache';
+import { useSkillStore } from '../store/skillStore';
+import type { ExecutionContext, AggregatedResult, ResourceSkillBinding } from '../engine/types';
+import type { IndustrialResource } from '../types';
 
-const SIX_M_CATEGORIES: { id: SixMType; label: string; icon: any }[] = [
-  { id: 'man', label: '人', icon: User },
-  { id: 'machine', label: '机', icon: Settings },
-  { id: 'material', label: '料', icon: Package },
-  { id: 'method', label: '法', icon: BookOpen },
-  { id: 'environment', label: '环', icon: Cloud },
-  { id: 'measurement', label: '测', icon: Search },
+// 4大类资源配置
+const RESOURCE_CATEGORIES: { id: ResourceCategory; label: string; icon: any; color: string }[] = [
+  { id: 'consumable', label: '消耗类', icon: Package, color: 'text-blue-600' },
+  { id: 'occupiable', label: '占用类', icon: Factory, color: 'text-purple-600' },
+  { id: 'labor', label: '人工类', icon: User, color: 'text-green-600' },
+  { id: 'allocatable', label: '摊销类', icon: Scale, color: 'text-amber-600' },
+  { id: 'external', label: '外部成本', icon: Truck, color: 'text-rose-600' },
 ];
+
+const SIX_M_CATEGORIES: { id: SixMType; label: string; icon: any; resourceCategory: ResourceCategory }[] = [
+  { id: 'man', label: '人', icon: User, resourceCategory: 'labor' },
+  { id: 'machine', label: '机', icon: Settings, resourceCategory: 'occupiable' },
+  { id: 'material', label: '料', icon: Package, resourceCategory: 'consumable' },
+  { id: 'method', label: '法', icon: BookOpen, resourceCategory: 'allocatable' },
+  { id: 'environment', label: '环', icon: Cloud, resourceCategory: 'allocatable' },
+  { id: 'measurement', label: '测', icon: Search, resourceCategory: 'external' },
+];
+
+// Skill Binding Panel Component
+function SkillBindingPanel({
+  node,
+  selectedResources,
+  bindings,
+  calculationResult,
+  isCalculating,
+  onExecute
+}: {
+  node: SixMNode;
+  selectedResources: IndustrialResource[];
+  bindings: ResourceSkillBinding[];
+  calculationResult: AggregatedResult | null;
+  isCalculating: boolean;
+  onExecute: () => void;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      {/* Binding Status */}
+      <div className="p-3 bg-primary/5 border border-primary/20">
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-sm font-medium text-primary flex items-center gap-2">
+            <Layers className="w-4 h-4" />
+            Skill自动绑定
+          </h4>
+          {bindings.length > 0 && (
+            <Badge variant="outline" className="text-[10px] rounded-none">
+              {bindings.length} 个Skill
+            </Badge>
+          )}
+        </div>
+
+        {bindings.length > 0 ? (
+          <div className="space-y-1.5">
+            {bindings.map((binding, idx) => (
+              <div key={idx} className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3 h-3 text-green-500" />
+                  <span className="font-mono">{binding.skill_id}</span>
+                </div>
+                <span className="text-[10px] text-muted-foreground">{binding.rule_id}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-xs text-muted-foreground">
+            选择资源后将自动匹配Binding Rule并绑定Skill
+          </div>
+        )}
+      </div>
+
+      {/* Calculation Result */}
+      {(calculationResult || isCalculating) && (
+        <div className={`p-4 border ${calculationResult?.status === 'error' ? 'bg-destructive/5 border-destructive/20' : 'bg-green-500/5 border-green-500/20'}`}>
+          <div className="flex items-center justify-between mb-3">
+            <h4 className={`text-sm font-medium flex items-center gap-2 ${calculationResult?.status === 'error' ? 'text-destructive' : 'text-green-700'}`}>
+              {isCalculating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : calculationResult?.status === 'error' ? (
+                <AlertTriangle className="w-4 h-4" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4" />
+              )}
+              {isCalculating ? '计算中...' : 'Skill计算结果'}
+            </h4>
+            {calculationResult && (
+              <span className="text-[10px] text-muted-foreground">
+                {calculationResult.executionTime.toFixed(0)}ms
+              </span>
+            )}
+          </div>
+
+          {calculationResult && (
+            <>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm text-muted-foreground">总成本:</span>
+                <span className="text-xl font-mono font-bold text-primary">
+                  ¥{calculationResult.totalCost?.toLocaleString()}
+                </span>
+              </div>
+
+              {calculationResult.breakdown && Object.keys(calculationResult.breakdown).length > 0 && (
+                <div className="mt-3 pt-3 border-t border-border/50">
+                  <button
+                    onClick={() => setShowDetails(!showDetails)}
+                    className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground mb-2"
+                  >
+                    {showDetails ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    成本构成
+                  </button>
+
+                  {showDetails && (
+                    <div className="space-y-1">
+                      {Object.entries(calculationResult.breakdown)
+                        .filter(([_, v]) => v && v > 0)
+                        .map(([key, value]) => (
+                          <div key={key} className="flex justify-between text-xs">
+                            <span className="capitalize text-muted-foreground">{key}:</span>
+                            <span className="font-mono">¥{(value || 0).toLocaleString()}</span>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {calculationResult.executionTrace?.skillResults && (
+                <div className="mt-3 pt-3 border-t border-border/50">
+                  <div className="text-[10px] text-muted-foreground mb-1">执行链路:</div>
+                  <div className="space-y-0.5">
+                    {calculationResult.executionTrace.skillResults.slice(0, 3).map((sr, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-[10px]">
+                        <span className="font-mono">{sr.skillCode}</span>
+                        <span className={`${sr.status === 'success' ? 'text-green-500' : 'text-destructive'}`}>
+                          {sr.executionTime.toFixed(0)}ms
+                        </span>
+                      </div>
+                    ))}
+                    {calculationResult.executionTrace.skillResults.length > 3 && (
+                      <div className="text-[10px] text-muted-foreground">
+                        +{calculationResult.executionTrace.skillResults.length - 3} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full mt-3 h-7 text-xs rounded-none"
+            onClick={onExecute}
+            disabled={isCalculating}
+          >
+            {isCalculating ? (
+              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+            ) : (
+              <Calculator className="w-3 h-3 mr-1" />
+            )}
+            {isCalculating ? '计算中...' : '重新计算'}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Resource usage data interface
+interface ResourceUsage {
+  quantity: number;      // 数量
+  hours: number;         // 小时数
+  days: number;          // 人天数
+  weight: number;        // 吨/重量
+  area: number;          // 面积
+  volume: number;        // 体积
+  trips: number;         // 次数
+  shifts: number;        // 班次
+}
 
 export function TaskTemplateCenter() {
   const [taskPacks, setTaskPacks] = useState<TaskNodePack[]>(mockTaskNodePacks);
@@ -21,22 +203,136 @@ export function TaskTemplateCenter() {
   const [selectedCategory, setSelectedCategory] = useState<SixMType>('man');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
+  // Resource selection state
+  const [nodeResources, setNodeResources] = useState<Record<string, IndustrialResource[]>>({});
+  const [selectedResourceCategory, setSelectedResourceCategory] = useState<ResourceCategory | null>(null);
+
+  // Resource usage data (quantity, hours, days, tons, etc.)
+  const [resourceUsage, setResourceUsage] = useState<Record<string, ResourceUsage>>({});
+
+  // Skill execution state
+  const [calculationResults, setCalculationResults] = useState<Record<string, AggregatedResult>>({});
+  const [isCalculating, setIsCalculating] = useState<Record<string, boolean>>({});
+
   const currentTaskPack = taskPacks.find(p => p.task_id === selectedTaskId) || taskPacks[0];
   const currentCategoryNodes = currentTaskPack.node_pack.find(p => p.type === selectedCategory)?.nodes || [];
   const selectedNode = currentCategoryNodes.find(n => n.id === selectedNodeId) || currentCategoryNodes[0];
 
+  // Get resources for current node
+  const currentNodeResources = selectedNode ? (nodeResources[selectedNode.id] || []) : [];
+
+  // Auto-bind Skills when resources or usage change
+  useEffect(() => {
+    if (!selectedNode || currentNodeResources.length === 0) return;
+
+    // Debounce calculation
+    const timer = setTimeout(() => {
+      executeSkillCalculation(selectedNode);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [
+    selectedNode?.id,
+    JSON.stringify(currentNodeResources.map(r => r.id)),
+    JSON.stringify(currentNodeResources.map(r => resourceUsage[`${selectedNode?.id}_${r.id}`]))
+  ]);
+
+  const executeSkillCalculation = useCallback(async (node: SixMNode) => {
+    const resources = nodeResources[node.id] || [];
+    if (resources.length === 0) return;
+
+    setIsCalculating(prev => ({ ...prev, [node.id]: true }));
+
+    try {
+      // Aggregate usage data from all resources
+      const usage = resources.reduce((acc, r) => {
+        const u = getResourceUsage(node.id, r.id);
+        return {
+          totalQuantity: acc.totalQuantity + u.quantity,
+          totalHours: acc.totalHours + u.hours,
+          totalDays: acc.totalDays + u.days,
+          totalWeight: acc.totalWeight + u.weight,
+          totalArea: acc.totalArea + u.area,
+          totalVolume: acc.totalVolume + u.volume,
+          totalTrips: acc.totalTrips + u.trips,
+          totalShifts: acc.totalShifts + u.shifts
+        };
+      }, { totalQuantity: 0, totalHours: 0, totalDays: 0, totalWeight: 0, totalArea: 0, totalVolume: 0, totalTrips: 0, totalShifts: 0 });
+
+      // Build execution context with usage data
+      const context: ExecutionContext = {
+        nodeId: node.id,
+        nodeType: node.type,
+        resources,
+        bindings: [],
+        inputs: {
+          // Node base data
+          duration: node.duration || node.work_hours || usage.totalHours || 1,
+          count: node.count || usage.totalQuantity || 1,
+          quantity: node.quantity || usage.totalQuantity || 0,
+          // Resource usage aggregated data
+          usage_quantity: usage.totalQuantity,
+          usage_hours: usage.totalHours,
+          usage_days: usage.totalDays,
+          usage_weight: usage.totalWeight,
+          usage_area: usage.totalArea,
+          usage_volume: usage.totalVolume,
+          usage_trips: usage.totalTrips,
+          usage_shifts: usage.totalShifts,
+          // Include full node data
+          ...node
+        },
+        outputs: {},
+        metadata: {
+          projectId: selectedTaskId,
+          startTime: Date.now(),
+          version: '1.0',
+          resourceUsage: Object.fromEntries(
+            resources.map(r => [r.id, getResourceUsage(node.id, r.id)])
+          )
+        }
+      };
+
+      // Create bindings from resources
+      const bindings: ResourceSkillBinding[] = [];
+      resources.forEach(resource => {
+        resource.bound_skill_ids.forEach(skillId => {
+          bindings.push({
+            id: `binding_${resource.id}_${skillId}_${Date.now()}`,
+            resource_id: resource.id,
+            skill_id: skillId,
+            rule_id: 'auto_binding',
+            input_overrides: {},
+            status: 'active'
+          });
+        });
+      });
+
+      // Execute Skill DAG
+      const dag = skillExecutionEngine.buildDAG(context, bindings);
+      const result = await skillExecutionEngine.executeDAG(dag, context);
+
+      setCalculationResults(prev => ({ ...prev, [node.id]: result }));
+    } catch (error) {
+      console.error('Skill calculation failed:', error);
+      toast.error('成本计算失败');
+    } finally {
+      setIsCalculating(prev => ({ ...prev, [node.id]: false }));
+    }
+  }, [nodeResources, selectedTaskId, resourceUsage]);
+
   const handleNodeChange = (field: keyof SixMNode, value: any) => {
     if (!selectedNode) return;
-    
+
     setTaskPacks(prevPacks => {
       return prevPacks.map(pack => {
         if (pack.task_id !== selectedTaskId) return pack;
-        
+
         return {
           ...pack,
           node_pack: pack.node_pack.map(category => {
             if (category.type !== selectedCategory) return category;
-            
+
             return {
               ...category,
               nodes: category.nodes.map(node => {
@@ -48,31 +344,93 @@ export function TaskTemplateCenter() {
         };
       });
     });
+
+    // Trigger recalculation after node change
+    setTimeout(() => {
+      executeSkillCalculation({ ...selectedNode, [field]: value });
+    }, 300);
   };
 
-  // Calculate costs
-  const calculateNodeCost = (node: SixMNode) => {
-    if (!node) return 0;
-    switch (node.type) {
-      case 'man':
-        return (node.count || 0) * (node.work_hours || 0) * (node.hourly_rate || 0);
-      case 'machine': {
-        const depreciation = (node.depreciation_per_hour || 0) * (node.duration || 0);
-        const energy = (node.power_kw || 0) * (node.duration || 0) * 0.8; // Assuming 0.8 energy cost factor
-        return depreciation + energy;
+  // Add resource to node
+  const addResourceToNode = (resource: IndustrialResource) => {
+    if (!selectedNode) return;
+
+    setNodeResources(prev => {
+      const current = prev[selectedNode.id] || [];
+      if (current.find(r => r.id === resource.id)) {
+        toast.info('该资源已添加');
+        return prev;
       }
-      case 'material':
-        return (node.quantity || 0) * (node.unit_price || 0) * (1 + (node.loss_rate || 0));
-      case 'measurement':
-        return node.cost || 0;
-      default:
-        return 0;
-    }
+      return {
+        ...prev,
+        [selectedNode.id]: [...current, resource]
+      };
+    });
+
+    // Initialize usage data for this resource
+    setResourceUsage(prev => ({
+      ...prev,
+      [`${selectedNode.id}_${resource.id}`]: {
+        quantity: 1,
+        hours: resource.category === 'labor' ? 8 : 0,
+        days: 1,
+        weight: 0,
+        area: 0,
+        volume: 0,
+        trips: 0,
+        shifts: 1
+      }
+    }));
+
+    toast.success(`已添加资源: ${resource.name}`);
   };
 
-  const totalCost = currentTaskPack.node_pack.reduce((total, pack) => {
-    return total + pack.nodes.reduce((packTotal, node) => packTotal + calculateNodeCost(node), 0);
-  }, 0);
+  // Remove resource from node
+  const removeResourceFromNode = (resourceId: string) => {
+    if (!selectedNode) return;
+
+    setNodeResources(prev => ({
+      ...prev,
+      [selectedNode.id]: (prev[selectedNode.id] || []).filter(r => r.id !== resourceId)
+    }));
+
+    // Remove usage data for this resource
+    setResourceUsage(prev => {
+      const key = `${selectedNode.id}_${resourceId}`;
+      const { [key]: _, ...rest } = prev;
+      return rest;
+    });
+  };
+
+  // Update resource usage data
+  const updateResourceUsage = (resourceId: string, field: keyof ResourceUsage, value: number) => {
+    if (!selectedNode) return;
+    const key = `${selectedNode.id}_${resourceId}`;
+    setResourceUsage(prev => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || { quantity: 1, hours: 0, days: 1, weight: 0, area: 0, volume: 0, trips: 0, shifts: 1 }),
+        [field]: value
+      }
+    }));
+  };
+
+  // Get usage data for a resource
+  const getResourceUsage = (nodeId: string, resourceId: string): ResourceUsage => {
+    return resourceUsage[`${nodeId}_${resourceId}`] || { quantity: 1, hours: 0, days: 1, weight: 0, area: 0, volume: 0, trips: 0, shifts: 1 };
+  };
+
+  // Calculate total cost using Skill results
+  const totalCost = useMemo(() => {
+    return Object.values(calculationResults).reduce((sum, result) => {
+      return sum + (result.totalCost || 0);
+    }, 0);
+  }, [calculationResults]);
+
+  // Get filtered resources by category
+  const filteredResources = selectedResourceCategory
+    ? INDUSTRIAL_RESOURCES.filter(r => r.category === selectedResourceCategory)
+    : INDUSTRIAL_RESOURCES;
 
   return (
     <div className="h-full flex flex-col space-y-4">
@@ -287,22 +645,274 @@ export function TaskTemplateCenter() {
                   </div>
                 </div>
 
-                {/* Cost Calculation (Auto) */}
-                {['man', 'machine', 'material', 'measurement'].includes(selectedNode.type) && (
-                  <div className="space-y-4 p-4 bg-primary/5 border border-primary/20">
-                    <h3 className="text-sm font-bold text-primary flex items-center gap-2">
-                      <Settings className="w-4 h-4" /> 系统自动计算成本
-                    </h3>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-mono text-muted-foreground">节点总成本:</span>
-                      <span className="text-xl font-mono font-bold">¥{calculateNodeCost(selectedNode).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                    </div>
-                    {selectedNode.type === 'man' && <div className="text-xs text-muted-foreground font-mono">计算公式: 人数 × 工时 × 单价</div>}
-                    {selectedNode.type === 'machine' && <div className="text-xs text-muted-foreground font-mono">计算公式: (折旧 × 时长) + (功率 × 时长 × 0.8能耗费)</div>}
-                    {selectedNode.type === 'material' && <div className="text-xs text-muted-foreground font-mono">计算公式: 用量 × 单价 × (1 + 损耗率)</div>}
-                    {selectedNode.type === 'measurement' && <div className="text-xs text-muted-foreground font-mono">直接取固定成本</div>}
+                {/* Resource Configuration */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-bold border-b border-border pb-2 flex items-center justify-between">
+                    <span>资源配置 (4大类12子类)</span>
+                    <span className="text-[10px] font-normal text-muted-foreground">
+                      已选 {currentNodeResources.length} 个资源
+                    </span>
+                  </h3>
+
+                  {/* Resource Category Selector */}
+                  <div className="flex flex-wrap gap-2">
+                    {RESOURCE_CATEGORIES.map(cat => {
+                      const Icon = cat.icon;
+                      const isActive = selectedResourceCategory === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          onClick={() => setSelectedResourceCategory(isActive ? null : cat.id)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border transition-colors ${
+                            isActive
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-border bg-background hover:border-primary/50'
+                          }`}
+                        >
+                          <Icon className={`w-3 h-3 ${isActive ? '' : cat.color}`} />
+                          {cat.label}
+                        </button>
+                      );
+                    })}
                   </div>
-                )}
+
+                  {/* Available Resources */}
+                  <div className="border border-border p-3 bg-muted/20">
+                    <div className="text-[10px] text-muted-foreground mb-2 font-mono uppercase">
+                      {selectedResourceCategory ? '可添加资源' : '选择资源类别'}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {filteredResources.map(resource => {
+                        const isAdded = currentNodeResources.some(r => r.id === resource.id);
+                        return (
+                          <button
+                            key={resource.id}
+                            onClick={() => addResourceToNode(resource)}
+                            disabled={isAdded}
+                            className={`px-2 py-1 text-[10px] border transition-colors ${
+                              isAdded
+                                ? 'bg-muted border-muted text-muted-foreground cursor-not-allowed'
+                                : 'bg-background border-border hover:border-primary'
+                            }`}
+                          >
+                            {resource.name}
+                            {isAdded && <CheckCircle2 className="w-2.5 h-2.5 inline ml-1" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Selected Resources List */}
+                  {currentNodeResources.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[10px] text-muted-foreground font-mono uppercase">已配置资源 (含计算属性)</div>
+                      <div className="space-y-2">
+                        {currentNodeResources.map(resource => (
+                          <div key={resource.id} className="p-3 bg-background border border-border">
+                            {/* Resource Header */}
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-sm">{resource.name}</span>
+                                <Badge variant="outline" className="text-[9px] rounded-none">
+                                  {resource.subcategory}
+                                </Badge>
+                              </div>
+                              <button
+                                onClick={() => removeResourceFromNode(resource.id)}
+                                className="text-muted-foreground hover:text-destructive"
+                              >
+                                ×
+                              </button>
+                            </div>
+                            {/* Resource Attributes - Data Source for Skills */}
+                            <div className="grid grid-cols-3 gap-2 text-[10px] text-muted-foreground border-t border-border pt-2">
+                              {/* Unit Cost */}
+                              <div className="flex justify-between">
+                                <span>单价:</span>
+                                <span className="font-mono text-foreground">¥{resource.unit_cost}/{resource.unit}</span>
+                              </div>
+                              {/* Category-specific attributes */}
+                              {resource.attributes.power_kw !== undefined && (
+                                <div className="flex justify-between">
+                                  <span>功率:</span>
+                                  <span className="font-mono text-foreground">{resource.attributes.power_kw}kW</span>
+                                </div>
+                              )}
+                              {resource.attributes.hourly_rate !== undefined && (
+                                <div className="flex justify-between">
+                                  <span>时薪:</span>
+                                  <span className="font-mono text-foreground">¥{resource.attributes.hourly_rate}</span>
+                                </div>
+                              )}
+                              {resource.attributes.efficiency !== undefined && (
+                                <div className="flex justify-between">
+                                  <span>效率:</span>
+                                  <span className="font-mono text-foreground">{resource.attributes.efficiency}</span>
+                                </div>
+                              )}
+                              {resource.attributes.loss_rate !== undefined && (
+                                <div className="flex justify-between">
+                                  <span>损耗:</span>
+                                  <span className="font-mono text-foreground">{(resource.attributes.loss_rate * 100).toFixed(0)}%</span>
+                                </div>
+                              )}
+                              {resource.attributes.utilization_rate !== undefined && (
+                                <div className="flex justify-between">
+                                  <span>利用率:</span>
+                                  <span className="font-mono text-foreground">{(resource.attributes.utilization_rate * 100).toFixed(0)}%</span>
+                                </div>
+                              )}
+                              {resource.attributes.skill_level && (
+                                <div className="flex justify-between">
+                                  <span>等级:</span>
+                                  <span className="font-mono text-foreground">{resource.attributes.skill_level}</span>
+                                </div>
+                              )}
+                              {resource.attributes.depreciation_period !== undefined && (
+                                <div className="flex justify-between">
+                                  <span>折旧期:</span>
+                                  <span className="font-mono text-foreground">{resource.attributes.depreciation_period}年</span>
+                                </div>
+                              )}
+                              {/* Bound Skills */}
+                              <div className="col-span-3 mt-1 pt-1 border-t border-dashed border-border">
+                                <div className="flex gap-1 flex-wrap">
+                                  {resource.bound_skill_ids.map(skillId => (
+                                    <span key={skillId} className="px-1.5 py-0.5 bg-primary/10 text-primary text-[9px] font-mono">
+                                      {skillId.split('-').slice(-2).join('-')}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                            {/* Usage Inputs - Cost Calculation Parameters */}
+                            <div className="mt-2 pt-2 border-t border-border">
+                              <div className="text-[10px] text-muted-foreground mb-2 font-mono uppercase">使用量配置</div>
+                              <div className="grid grid-cols-4 gap-2">
+                                {/* Quantity - for all types */}
+                                <div className="space-y-1">
+                                  <label className="text-[9px] text-muted-foreground">数量</label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step={resource.category === 'consumable' ? 0.01 : 1}
+                                    value={getResourceUsage(selectedNode?.id || '', resource.id).quantity}
+                                    onChange={(e) => updateResourceUsage(resource.id, 'quantity', Number(e.target.value))}
+                                    className="h-6 text-xs rounded-none"
+                                  />
+                                </div>
+                                {/* Hours - for labor and equipment */}
+                                {(resource.category === 'labor' || resource.category === 'occupiable') && (
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] text-muted-foreground">小时</label>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      step={0.5}
+                                      value={getResourceUsage(selectedNode?.id || '', resource.id).hours}
+                                      onChange={(e) => updateResourceUsage(resource.id, 'hours', Number(e.target.value))}
+                                      className="h-6 text-xs rounded-none"
+                                    />
+                                  </div>
+                                )}
+                                {/* Days - for labor */}
+                                {resource.category === 'labor' && (
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] text-muted-foreground">人天</label>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      step={0.5}
+                                      value={getResourceUsage(selectedNode?.id || '', resource.id).days}
+                                      onChange={(e) => updateResourceUsage(resource.id, 'days', Number(e.target.value))}
+                                      className="h-6 text-xs rounded-none"
+                                    />
+                                  </div>
+                                )}
+                                {/* Weight - for consumable materials */}
+                                {resource.category === 'consumable' && resource.subcategory === 'raw_material' && (
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] text-muted-foreground">重量(吨)</label>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      step={0.001}
+                                      value={getResourceUsage(selectedNode?.id || '', resource.id).weight}
+                                      onChange={(e) => updateResourceUsage(resource.id, 'weight', Number(e.target.value))}
+                                      className="h-6 text-xs rounded-none"
+                                    />
+                                  </div>
+                                )}
+                                {/* Area - for space */}
+                                {resource.subcategory === 'space' && (
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] text-muted-foreground">面积(m²)</label>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      step={0.1}
+                                      value={getResourceUsage(selectedNode?.id || '', resource.id).area}
+                                      onChange={(e) => updateResourceUsage(resource.id, 'area', Number(e.target.value))}
+                                      className="h-6 text-xs rounded-none"
+                                    />
+                                  </div>
+                                )}
+                                {/* Trips - for external logistics */}
+                                {resource.subcategory === 'logistics' && (
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] text-muted-foreground">趟次</label>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      step={1}
+                                      value={getResourceUsage(selectedNode?.id || '', resource.id).trips}
+                                      onChange={(e) => updateResourceUsage(resource.id, 'trips', Number(e.target.value))}
+                                      className="h-6 text-xs rounded-none"
+                                    />
+                                  </div>
+                                )}
+                                {/* Shifts - for production lines */}
+                                {resource.subcategory === 'production_line' && (
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] text-muted-foreground">班次</label>
+                                    <Input
+                                      type="number"
+                                      min={1}
+                                      step={1}
+                                      value={getResourceUsage(selectedNode?.id || '', resource.id).shifts}
+                                      onChange={(e) => updateResourceUsage(resource.id, 'shifts', Number(e.target.value))}
+                                      className="h-6 text-xs rounded-none"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Skill Binding & Calculation */}
+                <SkillBindingPanel
+                  node={selectedNode}
+                  selectedResources={currentNodeResources}
+                  bindings={currentNodeResources.flatMap(r =>
+                    r.bound_skill_ids.map(skillId => ({
+                      id: `binding_${r.id}_${skillId}`,
+                      resource_id: r.id,
+                      skill_id: skillId,
+                      rule_id: 'auto_binding',
+                      input_overrides: {},
+                      status: 'active' as const
+                    }))
+                  )}
+                  calculationResult={selectedNode ? calculationResults[selectedNode.id] : null}
+                  isCalculating={selectedNode ? isCalculating[selectedNode.id] : false}
+                  onExecute={() => selectedNode && executeSkillCalculation(selectedNode)}
+                />
 
               </div>
             ) : (

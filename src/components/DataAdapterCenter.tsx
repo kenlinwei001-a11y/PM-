@@ -1,63 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Upload, FileSpreadsheet, Database, Link, CheckCircle2, AlertCircle, RefreshCw, Layers } from 'lucide-react';
 import { toast } from 'sonner';
+import { mockTaskNodePacks } from '../types';
 
-// 工序和子节点数据
-const PROCESS_NODES = [
-  {
-    id: 'DESIGN_PROCESS',
-    name: '设计与准备',
-    subNodes: [
-      { id: 'sub_design_1', name: '需求分析' },
-      { id: 'sub_design_2', name: '方案设计' },
-      { id: 'sub_design_3', name: '图纸绘制' },
-      { id: 'sub_design_4', name: '设计评审' }
-    ]
-  },
-  {
-    id: 'CNC_PROCESS',
-    name: 'CNC机加工',
-    subNodes: [
-      { id: 'sub_cnc_1', name: '程序编制' },
-      { id: 'sub_cnc_2', name: '工件装夹' },
-      { id: 'sub_cnc_3', name: '粗加工' },
-      { id: 'sub_cnc_4', name: '精加工' },
-      { id: 'sub_cnc_5', name: '质量检测' }
-    ]
-  },
-  {
-    id: 'WELD_PROCESS',
-    name: '焊接工序',
-    subNodes: [
-      { id: 'sub_weld_1', name: '焊前预热' },
-      { id: 'sub_weld_2', name: '主体焊接' },
-      { id: 'sub_weld_3', name: '探伤检测(NDT)' }
-    ]
-  },
-  {
-    id: 'ASSY_PROCESS',
-    name: '总装测试',
-    subNodes: [
-      { id: 'sub_assy_1', name: '机械组装' },
-      { id: 'sub_assy_2', name: '电气接线' },
-      { id: 'sub_assy_3', name: '系统联调' },
-      { id: 'sub_assy_4', name: '压力测试' }
-    ]
-  },
-  {
-    id: 'REWORK_PROCESS',
-    name: '返工焊接',
-    subNodes: [
-      { id: 'sub_rework_1', name: '缺陷分析' },
-      { id: 'sub_rework_2', name: '返工焊接' },
-      { id: 'sub_rework_3', name: '返工检验' }
-    ]
-  }
-];
+// 从 mockTaskNodePacks 生成工序和子节点数据
+const PROCESS_NODES = mockTaskNodePacks.map(pack => ({
+  id: pack.task_id,
+  name: pack.task_name,
+  subNodes: pack.node_pack.flatMap(category =>
+    category.nodes.map((node, index) => ({
+      id: `${pack.task_id}_${category.type}_${index + 1}`,
+      name: node.name,
+      category: category.type,
+      fullNode: node
+    }))
+  )
+}));
 
 export function DataAdapterCenter() {
   const [isUploading, setIsUploading] = useState(false);
@@ -150,7 +112,7 @@ export function DataAdapterCenter() {
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <Label className="font-mono text-xs text-muted-foreground">子任务节点</Label>
+                      <Label className="font-mono text-xs text-muted-foreground">子任务节点 (6M分类)</Label>
                       <select
                         value={selectedSubNode}
                         onChange={(e) => setSelectedSubNode(e.target.value)}
@@ -159,7 +121,9 @@ export function DataAdapterCenter() {
                       >
                         <option value="">请选择子任务...</option>
                         {selectedProcess && PROCESS_NODES.find(p => p.id === selectedProcess)?.subNodes.map(sub => (
-                          <option key={sub.id} value={sub.id}>{sub.name}</option>
+                          <option key={sub.id} value={sub.id}>
+                            [{sub.category?.toUpperCase()}] {sub.name}
+                          </option>
                         ))}
                       </select>
                     </div>

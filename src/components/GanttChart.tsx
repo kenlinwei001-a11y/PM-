@@ -1,12 +1,78 @@
 import { useState, useMemo } from 'react';
 import { Project, mockProcessLibrary, GraphNode, GraphEdge } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Calendar, Clock, User, AlertTriangle, GripVertical, Network, Loader2 } from 'lucide-react';
+import { Calendar, Clock, User, AlertTriangle, GripVertical, Network, Loader2, X, MessageSquare } from 'lucide-react';
 import { Button } from './ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { toast } from 'sonner';
+import { ReactFlow, Background, Controls, Node as FlowNode, Edge as FlowEdge, MarkerType, Position } from 'reactflow';
+import 'reactflow/dist/style.css';
 
 export function GanttChart({ project, onUpdateProject }: { project: Project, onUpdateProject?: (p: Project) => void }) {
   const tasks = project.ganttTasks;
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Dialog state for task graph popup
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+  // Get selected task details
+  const selectedTask = useMemo(() => {
+    return tasks.find(t => t.id === selectedTaskId) || null;
+  }, [selectedTaskId, tasks]);
+
+  // Get nodes for selected task
+  const taskNodes = useMemo(() => {
+    if (!selectedTaskId) return [];
+    return project.nodes.filter(n => n.id === selectedTaskId || n.parentId === selectedTaskId);
+  }, [selectedTaskId, project.nodes]);
+
+  // Create flow nodes and edges for the graph
+  const flowNodes: FlowNode[] = useMemo(() => {
+    return taskNodes.map((node, index) => ({
+      id: node.id,
+      position: { x: (index % 3) * 200, y: Math.floor(index / 3) * 150 },
+      data: {
+        label: (
+          <div className="p-2">
+            <div className="font-bold text-sm">{node.name}</div>
+            <div className="text-xs text-muted-foreground">{node.duration}天</div>
+            <div className="text-xs text-muted-foreground">¥{node.plannedCost.total.toLocaleString()}</div>
+          </div>
+        )
+      },
+      style: {
+        background: node.isCritical ? '#fee2e2' : '#f3f4f6',
+        border: node.isCritical ? '2px solid #ef4444' : '1px solid #d1d5db',
+        borderRadius: '8px',
+        width: 180,
+      }
+    }));
+  }, [taskNodes]);
+
+  const flowEdges: FlowEdge[] = useMemo(() => {
+    const edges: FlowEdge[] = [];
+    taskNodes.forEach(node => {
+      node.dependencies.forEach(depId => {
+        if (taskNodes.find(n => n.id === depId)) {
+          edges.push({
+            id: `e-${depId}-${node.id}`,
+            source: depId,
+            target: node.id,
+            markerEnd: { type: MarkerType.ArrowClosed },
+            style: { stroke: node.isCritical ? '#ef4444' : '#9ca3af', strokeWidth: node.isCritical ? 2 : 1 }
+          });
+        }
+      });
+    });
+    return edges;
+  }, [taskNodes]);
+
+  // Handle task bar click
+  const handleTaskClick = (taskId: string) => {
+    setSelectedTaskId(taskId);
+    setDialogOpen(true);
+  };
 
   // Calculate dynamic start and end dates based on tasks
   const { startDate, endDate, totalDays, days } = useMemo(() => {
@@ -192,8 +258,51 @@ export function GanttChart({ project, onUpdateProject }: { project: Project, onU
 
   return (
     <div className="h-full flex flex-col space-y-4">
+      {/* 项目阶段进度条 */}
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-serif text-xl">非标项目执行甘特图</h2>
+          <div className="text-sm text-muted-foreground">
+            总工期: {tasks.length > 0 ? Math.round((new Date(tasks[tasks.length - 1].end).getTime() - new Date(tasks[0].start).getTime()) / (1000 * 60 * 60 * 24)) : 0} 天
+          </div>
+        </div>
+
+        {/* 10个主节点进度条 */}
+        <div className="flex items-center gap-1 bg-muted/30 p-2 rounded-lg overflow-x-auto">
+          {tasks.map((task, index) => {
+            const statusColors = {
+              completed: 'bg-green-500',
+              running: 'bg-blue-500',
+              not_started: 'bg-gray-300',
+              delayed: 'bg-red-500'
+            };
+            const statusLabels = {
+              completed: '已完成',
+              running: '进行中',
+              not_started: '未开始',
+              delayed: '延期'
+            };
+            return (
+              <div key={task.id} className="flex items-center shrink-0">
+                <div className="flex flex-col items-center px-2 py-1 min-w-[80px]">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs text-white font-bold ${statusColors[task.status || 'not_started']}`}>
+                    {index + 1}
+                  </div>
+                  <span className="text-[10px] mt-1 text-center whitespace-nowrap">{task.name.slice(0, 4)}</span>
+                </div>
+                {index < tasks.length - 1 && (
+                  <div className="w-4 h-0.5 bg-muted-foreground/30" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="flex justify-between items-center">
-        <h2 className="font-serif text-xl">排产甘特图</h2>
+        <div className="flex items-center gap-4">
+          <h3 className="font-serif text-lg">详细排产</h3>
+        </div>
         <Button 
           onClick={handleGenerateNodes} 
           disabled={isGenerating || tasks.length === 0}
@@ -309,7 +418,7 @@ export function GanttChart({ project, onUpdateProject }: { project: Project, onU
                       </div>
                     </div>
                     <div className="flex-1 relative py-3">
-                      <div 
+                      <div
                         className={`absolute top-1/2 -translate-y-1/2 h-6 rounded-sm overflow-hidden group-hover:opacity-90 transition-opacity shadow-sm border cursor-pointer ${
                           task.status === 'completed' ? 'bg-green-500/20 border-green-500/30' :
                           task.status === 'running' ? 'bg-blue-500/20 border-blue-500/30' :
@@ -317,6 +426,8 @@ export function GanttChart({ project, onUpdateProject }: { project: Project, onU
                           'bg-muted border-border'
                         } ${isCritical ? 'ring-1 ring-destructive/50 ring-offset-1 ring-offset-background' : ''}`}
                         style={getTaskStyle(task.start, task.end)}
+                        onClick={() => handleTaskClick(task.id)}
+                        title="点击查看节点图谱"
                       >
                         <div 
                           className={`h-full ${
@@ -339,6 +450,69 @@ export function GanttChart({ project, onUpdateProject }: { project: Project, onU
           </div>
         </CardContent>
       </Card>
+
+      {/* Task Graph Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-4xl h-[600px] rounded-none p-0">
+          <DialogHeader className="p-4 border-b border-border">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="font-serif text-lg flex items-center gap-2">
+                <Network className="w-5 h-5 text-primary" />
+                {selectedTask?.name} - 节点图谱
+              </DialogTitle>
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setDialogOpen(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="flex items-center gap-4 text-xs font-mono text-muted-foreground">
+              <span>工期: {selectedTask?.duration}天</span>
+              <span>进度: {selectedTask?.progress}%</span>
+              <span>资源: {selectedTask?.resource}</span>
+              <span className={selectedTask?.status === 'delayed' ? 'text-destructive' : 'text-green-600'}>
+                状态: {selectedTask?.status === 'completed' ? '已完成' : selectedTask?.status === 'running' ? '进行中' : selectedTask?.status === 'delayed' ? '延期' : '未开始'}
+              </span>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 h-[500px]">
+            {taskNodes.length > 0 ? (
+              <ReactFlow
+                nodes={flowNodes}
+                edges={flowEdges}
+                fitView
+                attributionPosition="bottom-right"
+              >
+                <Background />
+                <Controls />
+              </ReactFlow>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+                <Network className="w-12 h-12 mb-4 opacity-30" />
+                <p className="text-sm">该任务暂无节点网络</p>
+                <p className="text-xs mt-2">点击"自动生成节点网络"创建</p>
+              </div>
+            )}
+          </div>
+          {/* Person Communication Button */}
+          {selectedTask?.resource && (
+            <div className="p-3 border-t border-border bg-muted/20 flex justify-between items-center">
+              <div className="text-xs text-muted-foreground">
+                负责人: <span className="font-mono">{selectedTask.resource}</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-none text-xs"
+                onClick={() => {
+                  toast.success(`打开与 ${selectedTask.resource} 的对话窗口`);
+                }}
+              >
+                <MessageSquare className="w-3 h-3 mr-1" />
+                与负责人对话
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useState, ReactNode } from 'react';
-import { LayoutDashboard, Network, Play, Settings, Activity, Bot, CalendarDays, FolderKanban, Database, Terminal, FileText, Plus, X } from 'lucide-react';
+import { LayoutDashboard, Network, Play, Settings, Activity, Bot, CalendarDays, FolderKanban, Database, Terminal, FileText, Plus, X, Lightbulb } from 'lucide-react';
 import { ProjectTree } from './components/ProjectTree';
-import { RuleCenter } from './components/RuleCenter';
+import { SkillCenter } from './components/SkillCenter';
 import { Dashboard } from './components/Dashboard';
 import { GanttChart } from './components/GanttChart';
 import { ResourceCenter } from './components/ResourceCenter';
@@ -46,7 +46,7 @@ export default function App() {
   };
 
   const renderContent = () => {
-    if (globalNav === 'rules') return <RuleCenter />;
+    if (globalNav === 'skills') return <SkillCenter />;
     if (globalNav === 'resources') return <ResourceCenter />;
     if (globalNav === 'templates') return <TaskTemplateCenter />;
     if (globalNav === 'ontology') return <OntologyGraphCenter />;
@@ -70,10 +70,10 @@ export default function App() {
   };
 
   const getTabTitle = () => {
-    if (globalNav === 'rules') return '规则中心';
+    if (globalNav === 'skills') return '规则与能力中心';
     if (globalNav === 'resources') return '资源中心';
     if (globalNav === 'templates') return '任务节点模板配置中心';
-    if (globalNav === 'ontology') return '企业项目图谱中心';
+    if (globalNav === 'ontology') return '非标项目执行与推演中心';
     if (globalNav === 'data') return '数据接入适配层';
     if (globalNav === 'parameters') return '默认参数体系';
 
@@ -102,11 +102,11 @@ export default function App() {
               isActive={globalNav === 'projects'} 
               onClick={() => { setGlobalNav('projects'); setActiveTab('gantt'); }} 
             />
-            <TopNavItem 
-              icon={<Settings className="w-4 h-4" />} 
-              label="规则" 
-              isActive={globalNav === 'rules'} 
-              onClick={() => setGlobalNav('rules')} 
+            <TopNavItem
+              icon={<Lightbulb className="w-4 h-4" />}
+              label="技能"
+              isActive={globalNav === 'skills'}
+              onClick={() => setGlobalNav('skills')}
             />
             <TopNavItem 
               icon={<Database className="w-4 h-4" />} 
@@ -266,7 +266,7 @@ export default function App() {
                       {newProjectTemplate === '环保设备制造' && <div className="w-2 h-2 rounded-full bg-primary" />}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 font-mono">
-                      包含: 120+ 流程节点, 35个 Task 模板, 完整 6M Node Pack, 默认规则库
+                      包含: 120+ 流程节点, 35个 Task 模板, 完整 6M Node Pack, 默认技能库
                     </div>
                   </div>
                   <div 

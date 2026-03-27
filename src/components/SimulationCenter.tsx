@@ -34,24 +34,24 @@ export function SimulationCenter({ project }: SimulationCenterProps) {
           { id: 'a2', desc: '替换 CNC_002 材料供应商为备用供应商B', benefit: '降低3%材料成本' }
         ]
       });
-      toast.success('推演完成 (Simulation completed)');
+      toast.success('推演完成');
     }, 1500);
   };
 
   const handleExecuteAction = (actionId: string) => {
-    toast.success('已执行优化策略 (Optimization strategy executed)');
+    toast.success('已执行优化策略');
   };
 
   return (
     <div className="h-full flex flex-col p-6 space-y-6 overflow-y-auto">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-serif font-bold text-primary">推演与决策中心 (Simulation & Action Engine)</h2>
+          <h2 className="text-2xl font-serif font-bold text-primary">推演与决策中心</h2>
           <p className="text-muted-foreground text-sm mt-1">基于当前项目状态进行多维推演，并提供可执行的优化建议。</p>
         </div>
         <Button onClick={handleSimulate} disabled={isSimulating} size="lg" className="font-mono text-base rounded-none">
           {isSimulating ? <Activity className="w-5 h-5 mr-2 animate-spin" /> : <Play className="w-5 h-5 mr-2 fill-current" />}
-          {isSimulating ? '正在推演中...' : '启动全局推演 (Run Simulation)'}
+          {isSimulating ? '正在推演中...' : '启动全局推演'}
         </Button>
       </div>
 
@@ -79,7 +79,7 @@ export function SimulationCenter({ project }: SimulationCenterProps) {
           <Card className="rounded-none border-border shadow-none flex flex-col">
             <CardHeader className="border-b border-border bg-muted/20 pb-4">
               <CardTitle className="text-lg font-serif flex items-center gap-2">
-                <Info className="w-5 h-5 text-blue-500" /> 解释引擎 (Explain Engine)
+                <Info className="w-5 h-5 text-blue-500" /> 解释引擎
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-6">
@@ -93,7 +93,7 @@ export function SimulationCenter({ project }: SimulationCenterProps) {
                       {((simulationResult.originalCost - simulationResult.optimizedCost) / simulationResult.originalCost * 100).toFixed(1)}%
                     </span>
                   </div>
-                  <div className="text-xs text-muted-foreground mt-2 line-through">原计划: ¥{(simulationResult.originalCost / 10000).toFixed(1)}万</div>
+                  <div className="text-xs text-muted-foreground mt-2 line-through">原方案: ¥{(simulationResult.originalCost / 10000).toFixed(1)}万</div>
                 </div>
                 <div className="p-4 bg-muted/30 border border-border">
                   <div className="text-sm text-muted-foreground mb-1">预计总工期</div>
@@ -104,13 +104,13 @@ export function SimulationCenter({ project }: SimulationCenterProps) {
                       {simulationResult.originalDuration - simulationResult.optimizedDuration}天
                     </span>
                   </div>
-                  <div className="text-xs text-muted-foreground mt-2 line-through">原计划: {simulationResult.originalDuration} 天</div>
+                  <div className="text-xs text-muted-foreground mt-2 line-through">原方案: {simulationResult.originalDuration} 天</div>
                 </div>
               </div>
 
               <div>
                 <h4 className="font-medium mb-3 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-orange-500" /> 识别到的瓶颈 (Bottlenecks)
+                  <AlertTriangle className="w-4 h-4 text-orange-500" /> 识别到的瓶颈
                 </h4>
                 <div className="space-y-2">
                   {simulationResult.bottlenecks.map((b: any, i: number) => (
@@ -131,7 +131,7 @@ export function SimulationCenter({ project }: SimulationCenterProps) {
           <Card className="rounded-none border-border shadow-none flex flex-col">
             <CardHeader className="border-b border-border bg-muted/20 pb-4">
               <CardTitle className="text-lg font-serif flex items-center gap-2">
-                <Zap className="w-5 h-5 text-emerald-500" /> 决策执行引擎 (Action Engine)
+                <Zap className="w-5 h-5 text-emerald-500" /> 决策执行引擎
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
@@ -148,7 +148,7 @@ export function SimulationCenter({ project }: SimulationCenterProps) {
                     </div>
                     <div className="flex justify-end">
                       <Button size="sm" onClick={() => handleExecuteAction(action.id)} className="rounded-none text-xs font-mono">
-                        一键执行 (Execute) <ArrowRight className="w-3 h-3 ml-1" />
+                        一键执行 <ArrowRight className="w-3 h-3 ml-1" />
                       </Button>
                     </div>
                   </div>
@@ -157,13 +157,13 @@ export function SimulationCenter({ project }: SimulationCenterProps) {
 
               <div className="mt-6 p-4 bg-muted/30 border border-border">
                 <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-blue-500" /> 自动重排 (Auto-Reschedule)
+                  <CheckCircle2 className="w-4 h-4 text-blue-500" /> 自动重排
                 </h4>
                 <p className="text-xs text-muted-foreground mb-3">
                   执行上述策略后，系统将自动更新甘特图、重新分配资源并更新节点状态。
                 </p>
                 <Button variant="outline" className="w-full rounded-none text-sm font-mono border-dashed">
-                  预览重排结果 (Preview)
+                  预览重排结果
                 </Button>
               </div>
             </CardContent>

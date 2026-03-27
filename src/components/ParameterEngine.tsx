@@ -13,14 +13,14 @@ export function ParameterEngine() {
     setIsSaving(true);
     setTimeout(() => {
       setIsSaving(false);
-      toast.success('全局参数已更新 (Global parameters updated)');
+      toast.success('全局参数已更新');
     }, 800);
   };
 
   return (
     <div className="h-full flex flex-col space-y-4">
       <div className="flex justify-between items-center bg-card p-4 border border-border">
-        <h2 className="font-serif text-xl font-medium">默认参数体系 (Default Parameter Engine)</h2>
+        <h2 className="font-serif text-xl font-medium">默认参数体系</h2>
         <Button onClick={handleSave} disabled={isSaving} className="rounded-none font-mono">
           {isSaving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
           保存全局配置
@@ -34,7 +34,7 @@ export function ParameterEngine() {
           <Card className="rounded-none border-border shadow-none">
             <CardHeader className="border-b border-border bg-muted/20">
               <CardTitle className="text-base font-serif flex items-center gap-2">
-                <Zap className="w-4 h-4 text-orange-500" /> 能源与公用事业 (Energy & Utilities)
+                <Zap className="w-4 h-4 text-orange-500" /> 能源与公用事业
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
@@ -63,7 +63,7 @@ export function ParameterEngine() {
           <Card className="rounded-none border-border shadow-none">
             <CardHeader className="border-b border-border bg-muted/20">
               <CardTitle className="text-base font-serif flex items-center gap-2">
-                <Users className="w-4 h-4 text-blue-500" /> 人力成本基准 (Labor Baseline)
+                <Users className="w-4 h-4 text-blue-500" /> 人力成本基准
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
@@ -92,7 +92,7 @@ export function ParameterEngine() {
           <Card className="rounded-none border-border shadow-none">
             <CardHeader className="border-b border-border bg-muted/20">
               <CardTitle className="text-base font-serif flex items-center gap-2">
-                <Settings className="w-4 h-4 text-emerald-500" /> 设备折旧与维护 (Machine & Maintenance)
+                <Settings className="w-4 h-4 text-emerald-500" /> 设备折旧与维护
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
@@ -121,7 +121,7 @@ export function ParameterEngine() {
           <Card className="rounded-none border-border shadow-none">
             <CardHeader className="border-b border-border bg-muted/20">
               <CardTitle className="text-base font-serif flex items-center gap-2">
-                <Package className="w-4 h-4 text-purple-500" /> 物料与仓储 (Material & Storage)
+                <Package className="w-4 h-4 text-purple-500" /> 物料与仓储
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-4">

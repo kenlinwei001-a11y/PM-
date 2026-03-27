@@ -193,21 +193,21 @@ export function GanttChart({ project, onUpdateProject }: { project: Project, onU
   return (
     <div className="h-full flex flex-col space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="font-serif text-xl">排产甘特图 (Timeline Gantt)</h2>
+        <h2 className="font-serif text-xl">排产甘特图</h2>
         <Button 
           onClick={handleGenerateNodes} 
           disabled={isGenerating || tasks.length === 0}
           className="font-mono text-xs flex items-center gap-2"
         >
           {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Network className="w-4 h-4" />}
-          {isGenerating ? '正在生成节点网络...' : '自动生成节点网络 (Auto-Generate Graph)'}
+          {isGenerating ? '正在生成节点网络...' : '自动生成节点网络'}
         </Button>
       </div>
 
       <Card className="flex-1 rounded-none border-border shadow-none flex flex-col overflow-hidden">
         <CardHeader className="border-b border-border bg-muted/20 py-3 flex flex-row items-center justify-between">
           <CardTitle className="text-sm font-mono uppercase tracking-wider flex items-center gap-2">
-            <Calendar className="w-4 h-4" /> 生产排期 (Production Schedule)
+            <Calendar className="w-4 h-4" /> 生产排期
           </CardTitle>
           {conflicts.length > 0 && (
             <div className="flex items-center gap-2 text-xs font-mono text-destructive bg-destructive/10 px-3 py-1 rounded-full border border-destructive/20">
@@ -221,7 +221,7 @@ export function GanttChart({ project, onUpdateProject }: { project: Project, onU
             {/* Header */}
             <div className="flex border-b border-border bg-muted/50 sticky top-0 z-30">
               <div className="w-80 shrink-0 border-r border-border p-3 font-mono text-xs uppercase text-muted-foreground flex items-center bg-muted/50">
-                任务信息 (Tasks)
+                任务信息
               </div>
               <div className="flex-1 flex relative">
                 {days.map((day, i) => {
@@ -295,7 +295,7 @@ export function GanttChart({ project, onUpdateProject }: { project: Project, onU
                         <div className="flex items-center gap-2">
                           <div className="font-sans text-sm font-medium truncate" title={task.name}>{task.name}</div>
                           {isCritical && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" title="关键路径节点 (Critical Path Node)" />
+                            <div className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" title="关键路径节点" />
                           )}
                         </div>
                         {task.status === 'delayed' && <AlertTriangle className="w-3 h-3 text-destructive shrink-0" />}

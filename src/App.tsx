@@ -70,18 +70,18 @@ export default function App() {
   };
 
   const getTabTitle = () => {
-    if (globalNav === 'rules') return '规则中心 (Rule Center)';
-    if (globalNav === 'resources') return '资源中心 (Resource Center)';
-    if (globalNav === 'templates') return 'Task 节点模板配置中心 (Task Template Center)';
-    if (globalNav === 'ontology') return '企业知识图谱中心 (Enterprise Ontology Graph)';
-    if (globalNav === 'data') return '数据接入适配层 (Data Adapter Layer)';
-    if (globalNav === 'parameters') return '默认参数体系 (Default Parameter Engine)';
+    if (globalNav === 'rules') return '规则中心';
+    if (globalNav === 'resources') return '资源中心';
+    if (globalNav === 'templates') return '任务节点模板配置中心';
+    if (globalNav === 'ontology') return '企业项目图谱中心';
+    if (globalNav === 'data') return '数据接入适配层';
+    if (globalNav === 'parameters') return '默认参数体系';
 
     switch (activeTab) {
-      case 'gantt': return '1. 项目规划 (Project Planning)';
-      case 'tree': return '2. 节点网络与智能决策 (Node Graph & AI Agents)';
-      case 'simulation': return '3. 推演与决策中心 (Simulation & Action Engine)';
-      case 'dashboard': return '4. 执行监控 (Execution Dashboard)';
+      case 'gantt': return '1. 项目规划';
+      case 'tree': return '2. 节点网络与智能决策';
+      case 'simulation': return '3. 推演与决策中心';
+      case 'dashboard': return '4. 执行监控';
       default: return '项目规划 (Project Planning)';
     }
   };
@@ -93,55 +93,55 @@ export default function App() {
         <div className="flex items-center gap-8">
           <div className="flex items-center gap-2 font-serif font-bold text-lg tracking-tight text-primary">
             <Activity className="w-5 h-5" />
-            <span>Decision OS</span>
+            <span>决策系统</span>
           </div>
           <nav className="flex items-center gap-1">
             <TopNavItem 
               icon={<FolderKanban className="w-4 h-4" />} 
-              label="项目 (Projects)" 
+              label="项目" 
               isActive={globalNav === 'projects'} 
               onClick={() => { setGlobalNav('projects'); setActiveTab('gantt'); }} 
             />
             <TopNavItem 
               icon={<Settings className="w-4 h-4" />} 
-              label="规则 (Rules)" 
+              label="规则" 
               isActive={globalNav === 'rules'} 
               onClick={() => setGlobalNav('rules')} 
             />
             <TopNavItem 
               icon={<Database className="w-4 h-4" />} 
-              label="资源 (Resources)" 
+              label="资源" 
               isActive={globalNav === 'resources'} 
               onClick={() => setGlobalNav('resources')} 
             />
             <TopNavItem 
               icon={<FileText className="w-4 h-4" />} 
-              label="模板 (Templates)" 
+              label="模板" 
               isActive={globalNav === 'templates'} 
               onClick={() => setGlobalNav('templates')} 
             />
-            <TopNavItem 
-              icon={<Network className="w-4 h-4" />} 
-              label="图谱 (Ontology)" 
-              isActive={globalNav === 'ontology'} 
-              onClick={() => setGlobalNav('ontology')} 
+            <TopNavItem
+              icon={<Network className="w-4 h-4" />}
+              label="项目图谱"
+              isActive={globalNav === 'ontology'}
+              onClick={() => setGlobalNav('ontology')}
             />
             <TopNavItem 
               icon={<Database className="w-4 h-4" />} 
-              label="数据 (Data)" 
+              label="数据接入" 
               isActive={globalNav === 'data'} 
               onClick={() => setGlobalNav('data')} 
             />
             <TopNavItem 
               icon={<Settings className="w-4 h-4" />} 
-              label="参数 (Params)" 
+              label="参数配置" 
               isActive={globalNav === 'parameters'} 
               onClick={() => setGlobalNav('parameters')} 
             />
           </nav>
         </div>
         <div className="flex items-center gap-4 text-sm font-mono text-muted-foreground">
-          <span>v2.0.0-beta</span>
+          <span>v2.0.0-测试版</span>
           <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center border border-border">
             <span className="text-xs font-bold">A</span>
           </div>
@@ -175,10 +175,10 @@ export default function App() {
               </div>
             </div>
             <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-              <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-4 mt-2">操作模块 (Modules)</div>
+              <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-4 mt-2">操作模块</div>
               <NavItem 
                 icon={<CalendarDays className="w-4 h-4" />} 
-                label="1. 项目规划 (Gantt)" 
+                label="1. 项目规划" 
                 isActive={activeTab === 'gantt'} 
                 onClick={() => setActiveTab('gantt')} 
               />
@@ -196,7 +196,7 @@ export default function App() {
               />
               <NavItem 
                 icon={<LayoutDashboard className="w-4 h-4" />} 
-                label="4. 执行监控 (Dashboard)" 
+                label="4. 执行监控" 
                 isActive={activeTab === 'dashboard'} 
                 onClick={() => setActiveTab('dashboard')} 
               />
@@ -220,16 +220,16 @@ export default function App() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-            <span>System Online</span>
+            <span>系统在线</span>
           </div>
           <div className="flex items-center gap-1.5 border-l border-border pl-4">
             <Terminal className="w-3 h-3" />
-            <span>Latest Log: [INFO] Solver constraints updated successfully.</span>
+            <span>最新日志：[信息] 求解器约束更新成功</span>
           </div>
         </div>
         <div className="flex items-center gap-2 cursor-pointer hover:text-primary transition-colors" onClick={() => { setGlobalNav('projects'); setActiveTab('agent'); }}>
           <Bot className="w-3 h-3" />
-          <span>Agent Assistant Ready</span>
+          <span>AI助手就绪</span>
         </div>
       </footer>
 
@@ -238,14 +238,14 @@ export default function App() {
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="bg-card border border-border w-[500px] shadow-2xl flex flex-col">
             <div className="p-4 border-b border-border bg-muted/20 flex justify-between items-center">
-              <h3 className="font-serif font-medium">新建项目 (New Project)</h3>
+              <h3 className="font-serif font-medium">新建项目</h3>
               <button onClick={() => setIsCreateModalOpen(false)} className="text-muted-foreground hover:text-foreground">
                 <X className="w-4 h-4" />
               </button>
             </div>
             <div className="p-6 space-y-6">
               <div className="space-y-2">
-                <label className="text-xs font-mono uppercase text-muted-foreground">项目名称 (Project Name)</label>
+                <label className="text-xs font-mono uppercase text-muted-foreground">项目名称</label>
                 <input
                   type="text"
                   value={newProjectName}
@@ -255,14 +255,14 @@ export default function App() {
                 />
               </div>
               <div className="space-y-3">
-                <label className="text-xs font-mono uppercase text-muted-foreground">行业初始化包 (Industry Bootstrap Pack)</label>
+                <label className="text-xs font-mono uppercase text-muted-foreground">行业初始化包</label>
                 <div className="grid grid-cols-1 gap-3">
                   <div 
                     className={`p-3 border cursor-pointer transition-colors ${newProjectTemplate === '环保设备制造' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}`}
                     onClick={() => setNewProjectTemplate('环保设备制造')}
                   >
                     <div className="font-medium text-sm flex items-center justify-between">
-                      大型装备定制 (Heavy Equipment)
+                      大型装备定制
                       {newProjectTemplate === '环保设备制造' && <div className="w-2 h-2 rounded-full bg-primary" />}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 font-mono">
@@ -274,7 +274,7 @@ export default function App() {
                     onClick={() => setNewProjectTemplate('水处理系统')}
                   >
                     <div className="font-medium text-sm flex items-center justify-between">
-                      水处理系统 (Water Treatment)
+                      水处理系统
                       {newProjectTemplate === '水处理系统' && <div className="w-2 h-2 rounded-full bg-primary" />}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 font-mono">
@@ -286,7 +286,7 @@ export default function App() {
                     onClick={() => setNewProjectTemplate('通用制造')}
                   >
                     <div className="font-medium text-sm flex items-center justify-between">
-                      通用制造 (General Manufacturing)
+                      通用制造
                       {newProjectTemplate === '通用制造' && <div className="w-2 h-2 rounded-full bg-primary" />}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 font-mono">

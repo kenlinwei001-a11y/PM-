@@ -15,7 +15,7 @@ export function RuleCenter() {
   return (
     <div className="h-full flex flex-col space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="font-serif text-xl">规则中心 (Rule Center) - 行业预置规则库</h2>
+        <h2 className="font-serif text-xl">规则中心 - 行业预置规则库</h2>
         <Button className="rounded-none font-mono uppercase tracking-wider text-xs h-8">
           <Plus className="w-4 h-4 mr-2" /> 新建规则
         </Button>
@@ -23,7 +23,7 @@ export function RuleCenter() {
 
       <Card className="rounded-none border-border shadow-none overflow-hidden flex-1 flex flex-col">
         <CardHeader className="border-b border-border bg-muted/20 py-3">
-          <CardTitle className="text-sm font-mono uppercase tracking-wider">活跃规则 (Active Rules)</CardTitle>
+          <CardTitle className="text-sm font-mono uppercase tracking-wider">活跃规则</CardTitle>
         </CardHeader>
         <CardContent className="p-0 flex-1 overflow-auto">
           <div className="grid grid-cols-[1.5fr_1fr_1fr_100px] gap-4 p-4 border-b border-border bg-muted/50 font-medium text-xs uppercase tracking-wider font-serif italic opacity-70 sticky top-0 z-10">

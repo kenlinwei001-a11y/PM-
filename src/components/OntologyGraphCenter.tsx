@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { OntologyGraph, OntologyNode, OntologyEdge, mockOntologyGraph } from '../types';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { OntologyGraph, OntologyNode, OntologyEdge, mockOntologyGraph, mockProjects } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -23,68 +23,183 @@ const NODE_COLORS = {
 };
 
 const CATEGORIES = [
-  { id: 'project', label: '项目 (Project)', icon: Network, color: NODE_COLORS.project },
-  { id: 'process', label: '工艺 (Process)', icon: Settings, color: NODE_COLORS.process },
-  { id: 'man', label: '人 (Man)', icon: User, color: NODE_COLORS.man },
-  { id: 'machine', label: '设备 (Machine)', icon: Settings, color: NODE_COLORS.machine },
-  { id: 'material', label: '物料 (Material)', icon: Package, color: NODE_COLORS.material },
-  { id: 'method', label: '方法 (Method)', icon: BookOpen, color: NODE_COLORS.method },
-  { id: 'environment', label: '环境 (Environment)', icon: Cloud, color: NODE_COLORS.environment },
-  { id: 'measurement', label: '检测 (Measurement)', icon: Search, color: NODE_COLORS.measurement },
-  { id: 'cost', label: '成本 (Cost)', icon: DollarSign, color: NODE_COLORS.cost },
-  { id: 'rule', label: '规则 (Rule)', icon: FileText, color: NODE_COLORS.rule },
+  { id: 'project', label: '项目', icon: Network, color: NODE_COLORS.project },
+  { id: 'process', label: '工艺', icon: Settings, color: NODE_COLORS.process },
+  { id: 'man', label: '人', icon: User, color: NODE_COLORS.man },
+  { id: 'machine', label: '设备', icon: Settings, color: NODE_COLORS.machine },
+  { id: 'material', label: '物料', icon: Package, color: NODE_COLORS.material },
+  { id: 'method', label: '方法', icon: BookOpen, color: NODE_COLORS.method },
+  { id: 'environment', label: '环境', icon: Cloud, color: NODE_COLORS.environment },
+  { id: 'measurement', label: '检测', icon: Search, color: NODE_COLORS.measurement },
+  { id: 'cost', label: '成本', icon: DollarSign, color: NODE_COLORS.cost },
+  { id: 'rule', label: '规则', icon: FileText, color: NODE_COLORS.rule },
 ];
+
+// 工序列表
+const PROCESS_LIST = [
+  { id: 'all', name: '全部' },
+  { id: 'DESIGN_PROCESS', name: '设计与准备' },
+  { id: 'CNC_PROCESS', name: 'CNC机加工' },
+  { id: 'WELD_PROCESS', name: '焊接工序' },
+  { id: 'ASSY_PROCESS', name: '总装测试' },
+  { id: 'REWORK_PROCESS', name: '返工焊接' },
+];
+
+// 项目列表
+const PROJECT_LIST = mockProjects.map(p => ({ id: p.id, name: p.name }));
 
 export function OntologyGraphCenter() {
   const [viewMode, setViewMode] = useState<'graph' | 'table' | 'dsl'>('graph');
   const [graphData, setGraphData] = useState<OntologyGraph>(mockOntologyGraph);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedProcess, setSelectedProcess] = useState<string>('all');
+  const [selectedProject, setSelectedProject] = useState<string>(PROJECT_LIST[0]?.id || '');
+
+  // Filter nodes and edges based on selected process
+  const filteredData = useMemo(() => {
+    if (selectedProcess === 'all') {
+      return graphData;
+    }
+
+    // Find the selected process node
+    const processNode = graphData.nodes.find(n => n.id === selectedProcess);
+    if (!processNode) return graphData;
+
+    // Find all edges connected to this process
+    const connectedEdges = graphData.edges.filter(
+      e => e.source === selectedProcess || e.target === selectedProcess
+    );
+
+    // Find all connected node IDs
+    const connectedNodeIds = new Set<string>();
+    connectedNodeIds.add(selectedProcess);
+    connectedEdges.forEach(e => {
+      connectedNodeIds.add(e.source);
+      connectedNodeIds.add(e.target);
+    });
+
+    // Filter nodes
+    const filteredNodes = graphData.nodes.filter(n => connectedNodeIds.has(n.id));
+
+    return {
+      nodes: filteredNodes,
+      edges: connectedEdges
+    };
+  }, [graphData, selectedProcess]);
 
   // Convert OntologyGraph to ReactFlow format
   const initialNodes: FlowNode[] = useMemo(() => {
-    // Simple layout logic for demo purposes
-    const processNode = graphData.nodes.find(n => n.type === 'process');
-    const otherNodes = graphData.nodes.filter(n => n.type !== 'process');
-    
+    const isAllView = selectedProcess === 'all';
+    const processNodes = filteredData.nodes.filter(n => n.type === 'process');
+    const otherNodes = filteredData.nodes.filter(n => n.type !== 'process');
+
     const nodes: FlowNode[] = [];
-    if (processNode) {
-      nodes.push({
-        id: processNode.id,
-        position: { x: 400, y: 300 },
-        data: { label: processNode.name },
-        style: {
-          background: NODE_COLORS[processNode.type as keyof typeof NODE_COLORS],
-          color: 'white',
-          border: 'none',
-          borderRadius: '8px',
-          padding: '10px 20px',
-          fontWeight: 'bold',
-        }
+
+    if (isAllView) {
+      // Layout: 5 process nodes in a horizontal line, with their 6M elements around each
+      const processSpacing = 350;
+      const startX = 200;
+      const centerY = 350;
+
+      processNodes.forEach((process, index) => {
+        const x = startX + index * processSpacing;
+        const y = centerY;
+
+        nodes.push({
+          id: process.id,
+          position: { x, y },
+          data: { label: process.name },
+          style: {
+            background: NODE_COLORS[process.type as keyof typeof NODE_COLORS],
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            padding: '12px 24px',
+            fontWeight: 'bold',
+            fontSize: '14px',
+          }
+        });
+
+        // Find 6M elements connected to this process
+        const connectedEdges = filteredData.edges.filter(e => e.source === process.id);
+        const connectedNodeIds = connectedEdges.map(e => e.target);
+        const connectedNodes = otherNodes.filter(n => connectedNodeIds.includes(n.id));
+
+        connectedNodes.forEach((node, nodeIndex) => {
+          const arcAngle = Math.PI;
+          const startAngle = Math.PI;
+          const angle = startAngle + (nodeIndex / Math.max(connectedNodes.length - 1, 1)) * arcAngle;
+          const radius = 180;
+          const nodeX = x + radius * Math.cos(angle);
+          const nodeY = y - 80 + radius * Math.sin(angle) * 0.5;
+
+          if (!nodes.find(n => n.id === node.id)) {
+            nodes.push({
+              id: node.id,
+              position: { x: nodeX, y: nodeY },
+              data: { label: node.name },
+              style: {
+                background: NODE_COLORS[node.type as keyof typeof NODE_COLORS],
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '6px 12px',
+                fontSize: '11px',
+              }
+            });
+          }
+        });
+      });
+    } else {
+      // Single process view: Star layout with process in center
+      const centerX = 400;
+      const centerY = 300;
+      const radius = 200;
+
+      processNodes.forEach(process => {
+        nodes.push({
+          id: process.id,
+          position: { x: centerX, y: centerY },
+          data: { label: process.name },
+          style: {
+            background: NODE_COLORS[process.type as keyof typeof NODE_COLORS],
+            color: 'white',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '16px 32px',
+            fontWeight: 'bold',
+            fontSize: '16px',
+          }
+        });
+
+        // Position 6M elements in a circle around the process
+        otherNodes.forEach((node, index) => {
+          const angle = (index / otherNodes.length) * 2 * Math.PI - Math.PI / 2;
+          const nodeX = centerX + radius * Math.cos(angle);
+          const nodeY = centerY + radius * Math.sin(angle);
+
+          nodes.push({
+            id: node.id,
+            position: { x: nodeX, y: nodeY },
+            data: { label: node.name },
+            style: {
+              background: NODE_COLORS[node.type as keyof typeof NODE_COLORS],
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '8px 16px',
+              fontSize: '12px',
+            }
+          });
+        });
       });
     }
 
-    otherNodes.forEach((node, index) => {
-      const angle = (index / otherNodes.length) * 2 * Math.PI;
-      const radius = 250;
-      nodes.push({
-        id: node.id,
-        position: { x: 400 + radius * Math.cos(angle), y: 300 + radius * Math.sin(angle) },
-        data: { label: node.name },
-        style: {
-          background: NODE_COLORS[node.type as keyof typeof NODE_COLORS],
-          color: 'white',
-          border: 'none',
-          borderRadius: '8px',
-          padding: '8px 16px',
-        }
-      });
-    });
-
     return nodes;
-  }, [graphData]);
+  }, [filteredData, selectedProcess]);
 
   const initialEdges: FlowEdge[] = useMemo(() => {
-    return graphData.edges.map(edge => ({
+    return filteredData.edges.map(edge => ({
       id: edge.id,
       source: edge.source,
       target: edge.target,
@@ -93,10 +208,16 @@ export function OntologyGraphCenter() {
       style: { stroke: '#94a3b8', strokeWidth: 2 },
       labelStyle: { fill: '#64748b', fontWeight: 500 },
     }));
-  }, [graphData]);
+  }, [filteredData]);
 
   const [nodes, setNodes] = useState<FlowNode[]>(initialNodes);
   const [edges, setEdges] = useState<FlowEdge[]>(initialEdges);
+
+  // Update nodes and edges when filter changes
+  useEffect(() => {
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+  }, [initialNodes, initialEdges]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -124,7 +245,7 @@ export function OntologyGraphCenter() {
   };
 
   const handleSave = () => {
-    toast.success('图谱已保存并发布 (Graph saved and published)');
+    toast.success('图谱已保存并发布');
   };
 
   return (
@@ -132,7 +253,7 @@ export function OntologyGraphCenter() {
       {/* Top Header */}
       <div className="flex justify-between items-center bg-card p-4 border border-border">
         <div className="flex items-center gap-4">
-          <h2 className="font-serif text-xl font-medium">企业知识图谱中心 (Ontology Graph)</h2>
+          <h2 className="font-serif text-xl font-medium">企业项目图谱中心</h2>
           <div className="flex bg-muted p-1 rounded-md">
             <button 
               onClick={() => setViewMode('graph')}
@@ -167,9 +288,52 @@ export function OntologyGraphCenter() {
 
       {/* Main Content */}
       <div className="flex-1 flex gap-4 min-h-0">
-        {/* Left: Ontology Navigator */}
+        {/* Left: Project Select + Process Filter + Ontology Navigator */}
         <Card className="w-64 flex flex-col rounded-none border-border shadow-none">
-          <CardHeader className="p-4 border-b border-border bg-muted/20">
+          {/* Project Selection */}
+          <div className="p-4 border-b border-border bg-muted/20">
+            <CardTitle className="text-sm font-mono uppercase tracking-wider mb-3">项目选择</CardTitle>
+            <select
+              value={selectedProject}
+              onChange={(e) => setSelectedProject(e.target.value)}
+              className="w-full bg-background border border-border p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary rounded-none"
+            >
+              {PROJECT_LIST.map(proj => (
+                <option key={proj.id} value={proj.id}>{proj.name}</option>
+              ))}
+            </select>
+            {selectedProject && (
+              <div className="mt-2 text-xs text-muted-foreground">
+                当前项目: <span className="text-primary font-medium">{PROJECT_LIST.find(p => p.id === selectedProject)?.name}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Process Filter */}
+          <div className="p-4 border-b border-border bg-muted/10">
+            <CardTitle className="text-sm font-mono uppercase tracking-wider mb-3">工序筛选</CardTitle>
+            <div className="space-y-1 max-h-[180px] overflow-y-auto">
+              {PROCESS_LIST.map(proc => (
+                <button
+                  key={proc.id}
+                  onClick={() => setSelectedProcess(proc.id)}
+                  className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors border-l-2 ${
+                    selectedProcess === proc.id
+                      ? 'border-primary bg-primary/10 text-primary font-medium'
+                      : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                  }`}
+                >
+                  <span>{proc.name}</span>
+                  {proc.id !== 'all' && (
+                    <span className="text-xs font-mono text-muted-foreground">
+                      {graphData.edges.filter(e => e.source === proc.id).length} 关联
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+          <CardHeader className="p-4 border-b border-border bg-muted/10">
             <CardTitle className="text-sm font-mono uppercase tracking-wider">本体分类树</CardTitle>
           </CardHeader>
           <CardContent className="p-0 flex-1 overflow-y-auto">
@@ -182,7 +346,7 @@ export function OntologyGraphCenter() {
                     <span className="text-sm font-medium">{cat.label}</span>
                   </div>
                   <span className="text-xs text-muted-foreground font-mono">
-                    {graphData.nodes.filter(n => n.type === cat.id).length}
+                    {filteredData.nodes.filter(n => n.type === cat.id).length}
                   </span>
                 </div>
               ))}
@@ -193,7 +357,7 @@ export function OntologyGraphCenter() {
         {/* Middle: Graph Editor */}
         <Card className="flex-1 flex flex-col rounded-none border-border shadow-none overflow-hidden">
           <CardHeader className="p-4 border-b border-border bg-muted/20 flex flex-row justify-between items-center">
-            <CardTitle className="text-sm font-mono uppercase tracking-wider">图谱画布 (Graph Editor)</CardTitle>
+            <CardTitle className="text-sm font-mono uppercase tracking-wider">项目图谱画布</CardTitle>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" className="h-8 text-xs font-mono rounded-none">
                 <Plus className="w-3 h-3 mr-1" /> 新增实体
@@ -219,27 +383,88 @@ export function OntologyGraphCenter() {
             )}
             {viewMode === 'dsl' && (
               <div className="p-4 h-full bg-[#1e1e1e] text-[#d4d4d4] font-mono text-sm overflow-auto whitespace-pre">
-{`PROCESS: WELD_PROCESS
-NAME: "焊接工序"
+                {selectedProcess === 'all' ? (
+                  <pre>{`// 全部工序 DSL 定义
+${filteredData.nodes.filter(n => n.type === 'process').map(p => {
+  const pEdges = filteredData.edges.filter(e => e.source === p.id);
+  const uses = pEdges.filter(e => e.type === 'uses').map(e => {
+    const target = filteredData.nodes.find(n => n.id === e.target);
+    return `  - ${target?.type?.toUpperCase()}: ${e.target} (${target?.name})`;
+  }).join('\n');
+  const consumes = pEdges.filter(e => e.type === 'consumes').map(e => {
+    const target = filteredData.nodes.find(n => n.id === e.target);
+    return `  - ${target?.type?.toUpperCase()}: ${e.target} (${target?.name})`;
+  }).join('\n');
+  const constrained = pEdges.filter(e => e.type === 'constrained_by').map(e => {
+    const target = filteredData.nodes.find(n => n.id === e.target);
+    return `  - ${target?.type?.toUpperCase()}: ${e.target} (${target?.name})`;
+  }).join('\n');
+  const requires = pEdges.filter(e => e.type === 'requires').map(e => {
+    const target = filteredData.nodes.find(n => n.id === e.target);
+    return `  - ${target?.type?.toUpperCase()}: ${e.target} (${target?.name})`;
+  }).join('\n');
+  return `PROCESS: ${p.id}
+NAME: "${p.name}"
 PROPERTIES:
-  defaultTime: 10h
-  riskLevel: "high"
+  defaultTime: ${p.properties.defaultTime}h
+  riskLevel: "${p.properties.riskLevel}"
 
 USES:
-  - MACHINE: WELD_MACHINE (焊机A)
-  - MAN: WELDER (高级焊工)
-    CONSTRAINTS:
-      unique: true
-      no_parallel: true
+${uses || '  (无)'}
 
 CONSUMES:
-  - MATERIAL: STEEL (不锈钢)
+${consumes || '  (无)'}
 
 CONSTRAINED_BY:
-  - RULE: WELD_RULE (焊接效率规则)
+${constrained || '  (无)'}
 
 REQUIRES:
-  - MEASUREMENT: UT_TEST (UT检测)`}
+${requires || '  (无)'}
+
+${'='.repeat(50)}
+`;
+}).join('\n')}`}</pre>
+                ) : (
+                  <pre>{(() => {
+                    const p = filteredData.nodes.find(n => n.type === 'process');
+                    if (!p) return '未选择工序';
+                    const pEdges = filteredData.edges.filter(e => e.source === p.id);
+                    const uses = pEdges.filter(e => e.type === 'uses').map(e => {
+                      const target = filteredData.nodes.find(n => n.id === e.target);
+                      return `  - ${target?.type?.toUpperCase()}: ${e.target} (${target?.name})`;
+                    }).join('\n');
+                    const consumes = pEdges.filter(e => e.type === 'consumes').map(e => {
+                      const target = filteredData.nodes.find(n => n.id === e.target);
+                      return `  - ${target?.type?.toUpperCase()}: ${e.target} (${target?.name})`;
+                    }).join('\n');
+                    const constrained = pEdges.filter(e => e.type === 'constrained_by').map(e => {
+                      const target = filteredData.nodes.find(n => n.id === e.target);
+                      return `  - ${target?.type?.toUpperCase()}: ${e.target} (${target?.name})`;
+                    }).join('\n');
+                    const requires = pEdges.filter(e => e.type === 'requires').map(e => {
+                      const target = filteredData.nodes.find(n => n.id === e.target);
+                      return `  - ${target?.type?.toUpperCase()}: ${e.target} (${target?.name})`;
+                    }).join('\n');
+                    return `PROCESS: ${p.id}
+NAME: "${p.name}"
+PROPERTIES:
+  defaultTime: ${p.properties.defaultTime}h
+  riskLevel: "${p.properties.riskLevel}"
+
+USES:
+${uses || '  (无)'}
+
+CONSUMES:
+${consumes || '  (无)'}
+
+CONSTRAINED_BY:
+${constrained || '  (无)'}
+
+REQUIRES:
+${requires || '  (无)'}
+`;
+                  })()}</pre>
+                )}
               </div>
             )}
             {viewMode === 'table' && (
@@ -254,7 +479,7 @@ REQUIRES:
                     </tr>
                   </thead>
                   <tbody>
-                    {graphData.nodes.map(node => (
+                    {filteredData.nodes.map(node => (
                       <tr key={node.id} className="border-b border-border hover:bg-muted/20">
                         <td className="px-4 py-2 font-mono">{node.id}</td>
                         <td className="px-4 py-2">
@@ -278,7 +503,7 @@ REQUIRES:
         {/* Right: Attribute Panel */}
         <Card className="w-80 flex flex-col rounded-none border-border shadow-none">
           <CardHeader className="p-4 border-b border-border bg-muted/20">
-            <CardTitle className="text-sm font-mono uppercase tracking-wider">属性面板 (Properties)</CardTitle>
+            <CardTitle className="text-sm font-mono uppercase tracking-wider">属性面板</CardTitle>
           </CardHeader>
           <CardContent className="p-4 flex-1 overflow-y-auto space-y-6">
             {selectedNode ? (
@@ -321,7 +546,7 @@ REQUIRES:
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold border-b border-border pb-2 text-primary">成本模型配置</h3>
                     <div className="p-3 bg-primary/5 border border-primary/20 space-y-2">
-                      <div className="text-xs font-mono text-muted-foreground mb-1">成本公式 (Cost Formula)</div>
+                      <div className="text-xs font-mono text-muted-foreground mb-1">成本公式</div>
                       <div className="font-mono text-xs space-y-1">
                         <div><span className="text-blue-600">人工成本</span> = 工时 × 人员单价</div>
                         <div><span className="text-purple-600">材料成本</span> = 用量 × 单价 × (1+损耗)</div>
@@ -336,10 +561,10 @@ REQUIRES:
                 <div className="space-y-4">
                   <h3 className="text-sm font-bold border-b border-border pb-2">关联关系</h3>
                   <div className="space-y-2">
-                    {graphData.edges.filter(e => e.source === selectedNode.id || e.target === selectedNode.id).map(edge => {
+                    {filteredData.edges.filter(e => e.source === selectedNode.id || e.target === selectedNode.id).map(edge => {
                       const isSource = edge.source === selectedNode.id;
                       const relatedNodeId = isSource ? edge.target : edge.source;
-                      const relatedNode = graphData.nodes.find(n => n.id === relatedNodeId);
+                      const relatedNode = filteredData.nodes.find(n => n.id === relatedNodeId);
                       return (
                         <div key={edge.id} className="p-2 border border-border bg-muted/30 text-xs font-mono">
                           <div className="flex justify-between items-center mb-1">

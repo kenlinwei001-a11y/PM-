@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Network, ListTree, Settings, Users, FileText, X, AlertTriangle, Calculator, Play, Bot, CheckCircle2, DollarSign, ArrowRight, Loader2, CalendarDays } from 'lucide-react';
+import { toast } from 'sonner';
 import { ReactFlow, Background, Controls, Node as FlowNode, Edge as FlowEdge, MarkerType, addEdge, applyNodeChanges, applyEdgeChanges, Connection, NodeChange, EdgeChange, Handle, Position } from 'reactflow';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
 import 'reactflow/dist/style.css';
@@ -38,9 +39,9 @@ const ProjectNodeComponent = ({ data, id }: any) => {
       <div className={`px-3 py-2 border-b border-border flex justify-between items-center ${hasError ? 'bg-destructive/10' : hasWarning ? 'bg-yellow-500/10' : 'bg-muted/30'}`}>
         <div className="font-bold text-sm tracking-tight truncate pr-2" title={n.name}>{n.name}</div>
         <div className="flex items-center gap-1">
-          {hasError && <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" title="规则校验错误" />}
-          {!hasError && hasWarning && <AlertTriangle className="w-3.5 h-3.5 text-yellow-500 shrink-0" title="规则校验警告" />}
-          {n.isCritical && <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" title="关键路径" />}
+          {hasError && <span title="规则校验错误"><AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" /></span>}
+          {!hasError && hasWarning && <span title="规则校验警告"><AlertTriangle className="w-3.5 h-3.5 text-yellow-500 shrink-0" /></span>}
+          {n.isCritical && <span title="关键路径"><AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" /></span>}
         </div>
       </div>
 
@@ -71,7 +72,7 @@ const ProjectNodeComponent = ({ data, id }: any) => {
       {/* L2: Sub-nodes */}
       {(expandedLevel === 'L2' || expandedLevel === 'L3') && (
         <div className="p-3 flex flex-col gap-2">
-          <div className="text-[10px] font-mono uppercase text-muted-foreground tracking-wider mb-1">子任务 (Sub-Tasks)</div>
+          <div className="text-[10px] font-mono uppercase text-muted-foreground tracking-wider mb-1">子任务</div>
           {n.subTasks && n.subTasks.length > 0 ? (
             <div className="space-y-1.5">
               {n.subTasks.map(st => (
@@ -292,7 +293,7 @@ export function ProjectTree({ project, onUpdateProject }: { project: Project, on
             <DollarSign className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">总成本 (Total Cost)</div>
+            <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">总成本</div>
             <div className="text-xl font-serif">¥{project.nodes.reduce((sum, n) => sum + n.plannedCost.total, 0).toLocaleString()}</div>
           </div>
         </Card>
@@ -301,7 +302,7 @@ export function ProjectTree({ project, onUpdateProject }: { project: Project, on
             <CalendarDays className="w-5 h-5 text-blue-500" />
           </div>
           <div>
-            <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">总周期 (Duration)</div>
+            <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">总周期</div>
             <div className="text-xl font-serif">{Math.max(...project.nodes.map(n => n.ef || 0))} 天</div>
           </div>
         </Card>
@@ -310,7 +311,7 @@ export function ProjectTree({ project, onUpdateProject }: { project: Project, on
             <CheckCircle2 className="w-5 h-5 text-green-500" />
           </div>
           <div>
-            <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">预期利润 (Profit)</div>
+            <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">预期利润</div>
             <div className="text-xl font-serif text-green-600">+15.2%</div>
           </div>
         </Card>
@@ -319,7 +320,7 @@ export function ProjectTree({ project, onUpdateProject }: { project: Project, on
             <AlertTriangle className="w-5 h-5 text-destructive" />
           </div>
           <div>
-            <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">风险指数 (Risk)</div>
+            <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">风险指数</div>
             <div className="text-xl font-serif text-destructive">
               {Math.max(...project.nodes.map(n => n.riskScore || 0))} / 100
             </div>
@@ -331,7 +332,7 @@ export function ProjectTree({ project, onUpdateProject }: { project: Project, on
         {/* Left Node Tree */}
         <Card className="w-64 shrink-0 flex flex-col overflow-hidden rounded-none border-border shadow-none bg-card">
           <div className="p-3 border-b border-border bg-muted/30 font-serif text-sm flex items-center gap-2">
-            <ListTree className="w-4 h-4" /> 节点树 (WBS)
+            <ListTree className="w-4 h-4" /> 节点树
           </div>
           <div className="flex-1 overflow-auto p-2 space-y-1">
             {project.nodes.map(node => (
@@ -372,11 +373,11 @@ export function ProjectTree({ project, onUpdateProject }: { project: Project, on
               <div className="absolute top-4 left-4 flex flex-col gap-2 pointer-events-none z-10">
                 <div className="flex items-center gap-2 text-xs font-mono bg-background/90 px-2 py-1 border border-border shadow-sm">
                   <div className="w-3 h-3 border border-destructive bg-destructive/10"></div>
-                  <span>关键路径 (Critical Path)</span>
+                  <span>关键路径</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs font-mono bg-background/90 px-2 py-1 border border-border shadow-sm">
                   <div className="w-3 h-3 border border-border bg-card"></div>
-                  <span>普通节点 (Normal Node)</span>
+                  <span>普通节点</span>
                 </div>
               </div>
             </div>
@@ -405,10 +406,10 @@ export function ProjectTree({ project, onUpdateProject }: { project: Project, on
                   <div>
                     {node.isCritical ? (
                       <span className="text-[10px] px-2 py-1 uppercase tracking-wider font-mono border bg-destructive/10 text-destructive border-destructive/20">
-                        是 (Yes)
+                        是
                       </span>
                     ) : (
-                      <span className="text-[10px] text-muted-foreground font-mono">否 (No)</span>
+                      <span className="text-[10px] text-muted-foreground font-mono">否</span>
                     )}
                   </div>
                   <div className="font-mono text-sm text-right">¥{node.plannedCost.total.toLocaleString()}</div>
@@ -544,12 +545,12 @@ export function ProjectTree({ project, onUpdateProject }: { project: Project, on
       {/* Bottom Simulation & AI */}
       <Card className="h-[280px] shrink-0 flex flex-col overflow-hidden rounded-none border-border shadow-none bg-card">
         <div className="p-3 border-b border-border bg-muted/30 font-serif text-sm flex items-center gap-2">
-          <Bot className="w-4 h-4 text-primary" /> 推演与AI建议 (Simulation & AI)
+          <Bot className="w-4 h-4 text-primary" /> 推演与AI建议
         </div>
         <div className="flex-1 flex overflow-hidden">
           {/* Input Area */}
           <div className="w-1/3 border-r border-border p-4 flex flex-col gap-4 bg-muted/5">
-            <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">假设输入 (What-If)</div>
+            <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">假设输入</div>
             <div className="flex-1">
               <textarea 
                 className="w-full h-full bg-background border border-border p-3 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary"
@@ -557,15 +558,20 @@ export function ProjectTree({ project, onUpdateProject }: { project: Project, on
                 defaultValue="如果增加一个焊机会怎样？"
               />
             </div>
-            <Button className="w-full rounded-none font-mono text-xs uppercase tracking-wider">
-              <Play className="w-3 h-3 mr-2" /> 运行推演 (Run Simulation)
+            <Button
+              className="w-full rounded-none font-mono text-xs uppercase tracking-wider"
+              onClick={() => {
+                toast.success('推演完成：增加焊机可缩短工期2天，成本增加¥1,500');
+              }}
+            >
+              <Play className="w-3 h-3 mr-2" /> 运行推演
             </Button>
           </div>
           
           {/* Output Area */}
-          <div className="flex-1 p-4 flex flex-col gap-4">
-            <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">推演结果 (Simulation Results)</div>
-            <div className="grid grid-cols-3 gap-4">
+          <div className="flex-1 p-4 flex flex-col gap-4 overflow-hidden">
+            <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">推演结果</div>
+            <div className="grid grid-cols-3 gap-4 shrink-0">
               <div className="p-3 border border-border bg-background flex flex-col gap-1">
                 <span className="text-xs text-muted-foreground">周期影响</span>
                 <span className="text-lg font-serif text-green-600">-2 天</span>
@@ -601,7 +607,7 @@ export function ProjectTree({ project, onUpdateProject }: { project: Project, on
                 ) : (
                   <CheckCircle2 className="w-3 h-3 mr-2" />
                 )}
-                应用方案 (Apply Solution)
+                应用方案
               </Button>
             </div>
           </div>

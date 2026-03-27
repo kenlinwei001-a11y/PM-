@@ -60,13 +60,13 @@ export function ResourceCenter() {
   return (
     <div className="h-full flex flex-col space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="font-serif text-2xl">资源中心 (Resource Center)</h2>
+        <h2 className="font-serif text-2xl">资源中心</h2>
         <div className="flex gap-3">
           <button className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">
-            <Plus className="w-4 h-4" /> 新增设备 (Add Equipment)
+            <Plus className="w-4 h-4" /> 新增设备
           </button>
           <button className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/80 transition-colors border border-border">
-            <Plus className="w-4 h-4" /> 新增人员 (Add Personnel)
+            <Plus className="w-4 h-4" /> 新增人员
           </button>
         </div>
       </div>
@@ -76,7 +76,7 @@ export function ResourceCenter() {
         <Card className="w-64 shrink-0 rounded-none border-border shadow-none flex flex-col bg-card/50">
           <CardHeader className="border-b border-border py-4">
             <CardTitle className="text-sm font-mono uppercase tracking-wider flex items-center gap-2">
-              <Filter className="w-4 h-4" /> 资源分类 (Categories)
+              <Filter className="w-4 h-4" /> 资源分类
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4 space-y-2">
@@ -91,14 +91,14 @@ export function ResourceCenter() {
               onClick={() => setActiveTab('equipment')}
               className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors ${activeTab === 'equipment' ? 'bg-primary/10 text-primary font-medium border-l-2 border-primary' : 'text-muted-foreground hover:bg-muted/50 border-l-2 border-transparent'}`}
             >
-              <span className="flex items-center gap-2"><Settings className="w-4 h-4" /> 设备 (Equipment)</span>
+              <span className="flex items-center gap-2"><Settings className="w-4 h-4" /> 设备</span>
               <span className="font-mono text-xs">{resources.filter(r => r.type === 'equipment').length}</span>
             </button>
             <button 
               onClick={() => setActiveTab('personnel')}
               className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors ${activeTab === 'personnel' ? 'bg-primary/10 text-primary font-medium border-l-2 border-primary' : 'text-muted-foreground hover:bg-muted/50 border-l-2 border-transparent'}`}
             >
-              <span className="flex items-center gap-2"><Users className="w-4 h-4" /> 人员 (Personnel)</span>
+              <span className="flex items-center gap-2"><Users className="w-4 h-4" /> 人员</span>
               <span className="font-mono text-xs">{resources.filter(r => r.type === 'personnel').length}</span>
             </button>
           </CardContent>
@@ -121,11 +121,11 @@ export function ResourceCenter() {
               <thead className="text-xs font-mono uppercase tracking-wider text-muted-foreground bg-muted/50 sticky top-0 z-10">
                 <tr>
                   <th className="px-6 py-4 font-medium border-b border-border">ID</th>
-                  <th className="px-6 py-4 font-medium border-b border-border">名称 (Name)</th>
-                  <th className="px-6 py-4 font-medium border-b border-border">类型 (Type)</th>
-                  <th className="px-6 py-4 font-medium border-b border-border">状态 (Status)</th>
-                  <th className="px-6 py-4 font-medium border-b border-border">核心属性 (Attributes)</th>
-                  <th className="px-6 py-4 font-medium border-b border-border text-right">操作 (Actions)</th>
+                  <th className="px-6 py-4 font-medium border-b border-border">名称</th>
+                  <th className="px-6 py-4 font-medium border-b border-border">类型</th>
+                  <th className="px-6 py-4 font-medium border-b border-border">状态</th>
+                  <th className="px-6 py-4 font-medium border-b border-border">核心属性</th>
+                  <th className="px-6 py-4 font-medium border-b border-border text-right">操作</th>
                 </tr>
               </thead>
               <tbody>

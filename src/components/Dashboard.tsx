@@ -16,22 +16,22 @@ export function Dashboard({ project }: { project: Project }) {
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard 
-          title="计划总成本 (Planned Cost)" 
+          title="计划总成本" 
           value={`¥${totalCost.toLocaleString()}`} 
           icon={<DollarSign className="w-4 h-4 text-muted-foreground" />} 
         />
         <StatCard 
-          title="关键路径工期 (CPM Duration)" 
+          title="关键路径工期" 
           value={`${projectDuration} 天`} 
           icon={<Clock className="w-4 h-4 text-muted-foreground" />} 
         />
         <StatCard 
-          title="进行中节点 (In Progress)" 
+          title="进行中节点" 
           value={inProgressNodes.toString()} 
           icon={<Activity className="w-4 h-4 text-muted-foreground" />} 
         />
         <StatCard 
-          title="关键节点数 (Critical Nodes)" 
+          title="关键节点数" 
           value={criticalNodesCount.toString()} 
           icon={<AlertTriangle className="w-4 h-4 text-destructive" />} 
         />
@@ -39,7 +39,7 @@ export function Dashboard({ project }: { project: Project }) {
 
       <Card className="rounded-none border-border shadow-none">
         <CardHeader className="border-b border-border pb-4">
-          <CardTitle className="font-serif text-lg font-medium">最近项目节点 (Recent Nodes)</CardTitle>
+          <CardTitle className="font-serif text-lg font-medium">最近项目节点</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="grid grid-cols-[80px_1.5fr_1fr_1fr_100px] gap-4 p-4 border-b border-border bg-muted/50 font-medium text-xs uppercase tracking-wider font-serif italic opacity-70">
@@ -65,16 +65,16 @@ export function Dashboard({ project }: { project: Project }) {
               <div>
                 {node.isCritical ? (
                   <span className="text-[10px] px-2 py-1 uppercase tracking-wider font-mono border bg-destructive/10 text-destructive border-destructive/20">
-                    是 (Yes)
+                    是
                   </span>
                 ) : (
-                  <span className="text-[10px] text-muted-foreground font-mono">否 (No)</span>
+                  <span className="text-[10px] text-muted-foreground font-mono">否</span>
                 )}
               </div>
               <div className="font-mono text-sm text-right">¥{node.plannedCost.total.toLocaleString()}</div>
             </div>
           )) : (
-            <div className="p-8 text-center text-muted-foreground font-mono text-sm">暂无节点数据 (No nodes data)</div>
+            <div className="p-8 text-center text-muted-foreground font-mono text-sm">暂无节点数据</div>
           )}
         </CardContent>
       </Card>

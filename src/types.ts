@@ -174,7 +174,7 @@ export const mockGraph: ProjectGraph = {
 export const mockRules: Rule[] = [
   {
     id: "R1",
-    name: "RULE_WELD_TIME",
+    name: "焊接时间规则",
     expression: "IF material == '不锈钢' THEN duration = base_duration * 1.2",
     ruleType: "time",
     scope: "焊接工序",
@@ -182,7 +182,7 @@ export const mockRules: Rule[] = [
   },
   {
     id: "R2",
-    name: "RULE_PRESSURE_VESSEL",
+    name: "压力容器规则",
     expression: "IF type == '压力容器' THEN require(['无损检测', '压力测试'])",
     ruleType: "quality",
     scope: "全局",
@@ -190,7 +190,7 @@ export const mockRules: Rule[] = [
   },
   {
     id: "R3",
-    name: "RULE_ENERGY_WELD",
+    name: "焊接能耗规则",
     expression: "energy_cost = 25kW * duration * electricity_rate",
     ruleType: "cost",
     scope: "焊接机器人",
@@ -198,7 +198,7 @@ export const mockRules: Rule[] = [
   },
   {
     id: "R4",
-    name: "RULE_DEPRECIATION",
+    name: "设备折旧规则",
     expression: "depreciation = equipment_cost / lifecycle_hours * duration",
     ruleType: "cost",
     scope: "数控设备",
@@ -206,7 +206,7 @@ export const mockRules: Rule[] = [
   },
   {
     id: "R5",
-    name: "RULE_MATERIAL_TITANIUM",
+    name: "钛合金物料规则",
     expression: "IF material == '钛合金' THEN loss_rate = 0.08; price = fetch_market_price()",
     ruleType: "cost",
     scope: "物料",
@@ -214,7 +214,7 @@ export const mockRules: Rule[] = [
   },
   {
     id: "R6",
-    name: "RULE_SCHEDULE_WELD",
+    name: "焊接排产规则",
     expression: "ASSERT start(焊接) >= end(装配)",
     ruleType: "time",
     scope: "排产",
@@ -222,7 +222,7 @@ export const mockRules: Rule[] = [
   },
   {
     id: "R7",
-    name: "RULE_COMPLIANCE",
+    name: "合规认证规则",
     expression: "IF type == '压力容器' THEN require_process('ISO认证')",
     ruleType: "compliance",
     scope: "全局",
@@ -230,7 +230,7 @@ export const mockRules: Rule[] = [
   },
   {
     id: "R8",
-    name: "RULE_LOGIC_PREHEAT",
+    name: "预热逻辑规则",
     expression: "IF process == '主体焊接' AND material == 'M_STEEL' THEN require_predecessor('焊前预热')",
     ruleType: "logic",
     scope: "焊接工序",
@@ -238,10 +238,34 @@ export const mockRules: Rule[] = [
   },
   {
     id: "R9",
-    name: "RULE_RESOURCE_LIMIT",
+    name: "资源限制规则",
     expression: "ASSERT concurrent_usage(R_WELD_01) <= 2",
     ruleType: "resource",
     scope: "全局",
+    isActive: true
+  },
+  {
+    id: "R10",
+    name: "定制化特殊材料成本分摊规则",
+    expression: "IF material_type == '定制特殊材料' THEN material_cost = base_price * quantity * 1.5 + custom_processing_fee",
+    ruleType: "cost",
+    scope: "物料成本",
+    isActive: true
+  },
+  {
+    id: "R11",
+    name: "非标工艺研发成本归集规则",
+    expression: "IF process_category == '非标工艺' THEN R&D_cost = design_hours * engineer_rate + trial_cost + validation_cost",
+    ruleType: "cost",
+    scope: "研发成本",
+    isActive: true
+  },
+  {
+    id: "R12",
+    name: "重型设备定制化使用的折旧分摊规则",
+    expression: "IF equipment_type == '重型设备' AND usage_type == '定制' THEN depreciation_cost = (equipment_value * customization_factor) / custom_lifecycle_hours * usage_hours",
+    ruleType: "cost",
+    scope: "设备折旧",
     isActive: true
   }
 ];
@@ -278,19 +302,87 @@ export interface OntologyGraph {
 
 export const mockOntologyGraph: OntologyGraph = {
   nodes: [
+    // 工序1：设计与准备
+    { id: 'DESIGN_PROCESS', type: 'process', name: '设计与准备', properties: { defaultTime: 8, riskLevel: 'medium' } },
+    { id: 'DESIGN_ENGINEER', type: 'man', name: '设计工程师', properties: { unitPrice: 400, type: 'Senior' } },
+    { id: 'CAD_SOFTWARE', type: 'machine', name: 'CAD工作站', properties: { power: 8, depreciation: 30 } },
+    { id: 'BLUEPRINT', type: 'material', name: '设计图纸', properties: { unitPrice: 100, lossRate: 0 } },
+    { id: 'DESIGN_RULE', type: 'rule', name: '设计规范', properties: { expression: 'compliance = ISO9001' } },
+    { id: 'DESIGN_REVIEW', type: 'measurement', name: '设计评审', properties: { cost: 800, mandatory: true } },
+
+    // 工序2：CNC机加工
+    { id: 'CNC_PROCESS', type: 'process', name: 'CNC机加工', properties: { defaultTime: 15, riskLevel: 'high' } },
+    { id: 'CNC_OPERATOR', type: 'man', name: 'CNC操作员', properties: { unitPrice: 250, type: 'Skilled' } },
+    { id: 'CNC_MACHINE', type: 'machine', name: '五轴CNC机床', properties: { power: 45, depreciation: 120 } },
+    { id: 'RAW_STEEL', type: 'material', name: '钢材原料', properties: { unitPrice: 80, lossRate: 0.1 } },
+    { id: 'CNC_RULE', type: 'rule', name: 'CNC加工规范', properties: { expression: 'precision = 0.01mm' } },
+    { id: 'QC_CNC', type: 'measurement', name: '尺寸检测', properties: { cost: 600, mandatory: true } },
+
+    // 工序3：焊接工序（原有）
     { id: 'WELD_PROCESS', type: 'process', name: '焊接工序', properties: { defaultTime: 10, riskLevel: 'high' } },
     { id: 'WELDER', type: 'man', name: '高级焊工', properties: { unitPrice: 300, type: 'Senior' } },
     { id: 'WELD_MACHINE', type: 'machine', name: '焊机A', properties: { power: 15, depreciation: 50 } },
     { id: 'STEEL', type: 'material', name: '不锈钢', properties: { unitPrice: 50, lossRate: 0.05 } },
     { id: 'WELD_RULE', type: 'rule', name: '焊接效率规则', properties: { expression: 'efficiency = 0.8' } },
-    { id: 'UT_TEST', type: 'measurement', name: 'UT检测', properties: { cost: 500, mandatory: true } }
+    { id: 'UT_TEST', type: 'measurement', name: 'UT检测', properties: { cost: 500, mandatory: true } },
+
+    // 工序4：总装测试
+    { id: 'ASSY_PROCESS', type: 'process', name: '总装测试', properties: { defaultTime: 12, riskLevel: 'medium' } },
+    { id: 'ASSEMBLER', type: 'man', name: '装配钳工', properties: { unitPrice: 200, type: 'Skilled' } },
+    { id: 'CRANE', type: 'machine', name: '行车', properties: { power: 30, depreciation: 80 } },
+    { id: 'FASTENER', type: 'material', name: '紧固件', properties: { unitPrice: 5, lossRate: 0.03 } },
+    { id: 'ASSY_RULE', type: 'rule', name: '装配SOP', properties: { expression: 'torque = standard' } },
+    { id: 'LEAK_TEST', type: 'measurement', name: '气密性测试', properties: { cost: 1200, mandatory: true } },
+
+    // 工序5：返工焊接
+    { id: 'REWORK_PROCESS', type: 'process', name: '返工焊接', properties: { defaultTime: 6, riskLevel: 'high' } },
+    { id: 'REWORK_WELDER', type: 'man', name: '返工焊工', properties: { unitPrice: 350, type: 'Expert' } },
+    { id: 'REWORK_WELDER_MACHINE', type: 'machine', name: '手工焊机', properties: { power: 10, depreciation: 40 } },
+    { id: 'FILLER_METAL', type: 'material', name: '焊丝', properties: { unitPrice: 30, lossRate: 0.15 } },
+    { id: 'REWORK_RULE', type: 'rule', name: '返工规范', properties: { expression: 'only_if_defect = true' } },
+    { id: 'REWORK_INSPECTION', type: 'measurement', name: '返工检验', properties: { cost: 700, mandatory: true } }
   ],
   edges: [
+    // 设计与准备关联
+    { id: 'e1_d', source: 'DESIGN_PROCESS', target: 'DESIGN_ENGINEER', type: 'uses' },
+    { id: 'e2_d', source: 'DESIGN_PROCESS', target: 'CAD_SOFTWARE', type: 'uses' },
+    { id: 'e3_d', source: 'DESIGN_PROCESS', target: 'BLUEPRINT', type: 'consumes' },
+    { id: 'e4_d', source: 'DESIGN_PROCESS', target: 'DESIGN_RULE', type: 'constrained_by' },
+    { id: 'e5_d', source: 'DESIGN_PROCESS', target: 'DESIGN_REVIEW', type: 'requires' },
+
+    // CNC机加工关联
+    { id: 'e1_c', source: 'CNC_PROCESS', target: 'CNC_OPERATOR', type: 'uses' },
+    { id: 'e2_c', source: 'CNC_PROCESS', target: 'CNC_MACHINE', type: 'uses' },
+    { id: 'e3_c', source: 'CNC_PROCESS', target: 'RAW_STEEL', type: 'consumes' },
+    { id: 'e4_c', source: 'CNC_PROCESS', target: 'CNC_RULE', type: 'constrained_by' },
+    { id: 'e5_c', source: 'CNC_PROCESS', target: 'QC_CNC', type: 'requires' },
+
+    // 焊接工序关联（原有）
     { id: 'e1', source: 'WELD_PROCESS', target: 'WELDER', type: 'uses', constraints: { unique: true, no_parallel: true } },
     { id: 'e2', source: 'WELD_PROCESS', target: 'WELD_MACHINE', type: 'uses' },
     { id: 'e3', source: 'WELD_PROCESS', target: 'STEEL', type: 'consumes' },
     { id: 'e4', source: 'WELD_PROCESS', target: 'WELD_RULE', type: 'constrained_by' },
-    { id: 'e5', source: 'WELD_PROCESS', target: 'UT_TEST', type: 'requires' }
+    { id: 'e5', source: 'WELD_PROCESS', target: 'UT_TEST', type: 'requires' },
+
+    // 总装测试关联
+    { id: 'e1_a', source: 'ASSY_PROCESS', target: 'ASSEMBLER', type: 'uses' },
+    { id: 'e2_a', source: 'ASSY_PROCESS', target: 'CRANE', type: 'uses' },
+    { id: 'e3_a', source: 'ASSY_PROCESS', target: 'FASTENER', type: 'consumes' },
+    { id: 'e4_a', source: 'ASSY_PROCESS', target: 'ASSY_RULE', type: 'constrained_by' },
+    { id: 'e5_a', source: 'ASSY_PROCESS', target: 'LEAK_TEST', type: 'requires' },
+
+    // 返工焊接关联
+    { id: 'e1_r', source: 'REWORK_PROCESS', target: 'REWORK_WELDER', type: 'uses' },
+    { id: 'e2_r', source: 'REWORK_PROCESS', target: 'REWORK_WELDER_MACHINE', type: 'uses' },
+    { id: 'e3_r', source: 'REWORK_PROCESS', target: 'FILLER_METAL', type: 'consumes' },
+    { id: 'e4_r', source: 'REWORK_PROCESS', target: 'REWORK_RULE', type: 'constrained_by' },
+    { id: 'e5_r', source: 'REWORK_PROCESS', target: 'REWORK_INSPECTION', type: 'requires' },
+
+    // 工序间流程关系
+    { id: 'flow1', source: 'DESIGN_PROCESS', target: 'CNC_PROCESS', type: 'follows' },
+    { id: 'flow2', source: 'CNC_PROCESS', target: 'WELD_PROCESS', type: 'follows' },
+    { id: 'flow3', source: 'WELD_PROCESS', target: 'ASSY_PROCESS', type: 'follows' },
+    { id: 'flow4', source: 'ASSY_PROCESS', target: 'REWORK_PROCESS', type: 'affects' }
   ]
 };
 

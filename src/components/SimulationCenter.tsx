@@ -1,27 +1,56 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
-import { Play, Activity, AlertTriangle, CheckCircle2, ArrowRight, Zap, TrendingDown, TrendingUp, Info, Plus, X, GitCompare, BarChart3, Clock, DollarSign, RotateCcw, Settings, MessageSquare, Send, Bot, User } from 'lucide-react';
+import {
+  Play, Activity, AlertTriangle, CheckCircle2, ArrowRight, Zap,
+  TrendingDown, TrendingUp, Info, Plus, X, GitCompare, BarChart3,
+  Clock, DollarSign, RotateCcw, Settings, MessageSquare, Send,
+  Bot, User, Download, Save, Undo2, FileText, ChevronDown,
+  ChevronRight, Calculator, LineChart, Layers, Target, Shield,
+  Sparkles, GitBranch, Calendar, Coins, AlertCircle
+} from 'lucide-react';
 import { Project, GraphNode } from '../types';
 import { toast } from 'sonner';
-import { useSkillStore, useNodeSkillResult } from '../store/skillStore';
 import { simulationEngine } from '../engine/SimulationEngine';
-import type { SimulationScenario, SimulationBatch, AggregatedResult } from '../engine/types';
-import { INDUSTRIAL_RESOURCES } from '../types';
+import type { AggregatedResult } from '../engine/types';
+import {
+  ReactFlow, Background, Controls, Node as FlowNode, Edge as FlowEdge,
+  useNodesState, useEdgesState, MarkerType, Position
+} from 'reactflow';
+import 'reactflow/dist/style.css';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
+  Legend, ResponsiveContainer, LineChart as ReLineChart, Line
+} from 'recharts';
 
 interface SimulationCenterProps {
   project: Project;
 }
 
-interface ScenarioConfig {
+// ==================== 类型定义 ====================
+
+type Scenario = {
   id: string;
   name: string;
-  description: string;
-  resourceChanges: string[]; // Resource IDs to add/remove
-  parameterOverrides: Record<string, number>;
-}
+  isBaseline: boolean;
+  overrides: {
+    resources?: Record<string, any>;
+    costs?: Record<string, number>;
+    schedule?: any;
+    risks?: Record<string, number>;
+  };
+};
+
+type KPI = {
+  cost: number;
+  duration: number;
+  profit: number;
+  risk: '低' | '中' | '高';
+};
+
+type ViewMode = 'graph' | 'gantt' | 'costflow';
 
 interface ChatMessage {
   id: string;
@@ -31,905 +60,772 @@ interface ChatMessage {
   suggestions?: string[];
 }
 
+// ==================== 主组件 ====================
+
 export function SimulationCenter({ project }: SimulationCenterProps) {
-  const [activeTab, setActiveTab] = useState<'setup' | 'results' | 'chat'>('setup');
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectAllNodes, setSelectAllNodes] = useState(false);
-  const [scenarios, setScenarios] = useState<ScenarioConfig[]>([
+  // ===== 状态管理 =====
+  const [activeScenario, setActiveScenario] = useState<string>('baseline');
+  const [scenarios, setScenarios] = useState<Scenario[]>([
     {
-      id: 'base',
-      name: '基准方案',
-      description: '当前资源配置',
-      resourceChanges: [],
-      parameterOverrides: {}
+      id: 'baseline',
+      name: 'Baseline',
+      isBaseline: true,
+      overrides: {}
+    },
+    {
+      id: 'scenario-a',
+      name: '方案A - 增加焊机',
+      isBaseline: false,
+      overrides: {
+        resources: { welders: 5, machines: 3 },
+        costs: { materialPrice: 1.1 }
+      }
+    },
+    {
+      id: 'scenario-b',
+      name: '方案B - 外协加工',
+      isBaseline: false,
+      overrides: {
+        resources: { welders: 3 },
+        costs: { outsourcingRate: 1.3 }
+      }
     }
   ]);
-  const [simulationBatch, setSimulationBatch] = useState<SimulationBatch | null>(null);
-  const [comparisonResults, setComparisonResults] = useState<{
-    scenario: ScenarioConfig;
-    result: AggregatedResult | null;
-    nodeCount?: number;
-    delta?: {
-      cost: number;
-      duration: number;
-    };
-  }[]>([]);
 
-  // Chat states
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const [viewMode, setViewMode] = useState<ViewMode>('graph');
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
+
+  // 参数覆盖状态
+  const [paramOverrides, setParamOverrides] = useState({
+    welders: 4,
+    machines: 2,
+    materialPrice: 1.0,
+    electricityPrice: 0.8,
+    outsourcingRate: 1.0,
+    reworkRate: 0.05,
+    delayProbability: 0.1
+  });
+
+  // KPI数据（模拟）
+  const [kpiData, setKpiData] = useState<Record<string, KPI>>({
+    baseline: { cost: 1200000, duration: 32, profit: 18, risk: '中' },
+    'scenario-a': { cost: 1350000, duration: 28, profit: 16, risk: '中' },
+    'scenario-b': { cost: 1500000, duration: 25, profit: 15, risk: '低' }
+  });
+
+  // 推演结果
+  const [simulationResults, setSimulationResults] = useState<Record<string, any>>({});
+
+  // 聊天状态
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
       role: 'assistant',
-      content: '你好！我是推演助手。我可以帮助你：\n1. 分析不同方案的成本和周期影响\n2. 推荐最优资源配置\n3. 解释推演结果\n4. 回答关于项目的问题\n\n请问有什么可以帮助你的？',
+      content: '💡 我是你的推演助手\n\n我可以帮你：\n• 分析不同方案的成本和周期影响\n• 识别项目瓶颈节点\n• 推荐最优资源配置\n• 解释推演结果数据\n\n你可以直接提问，或点击下方快捷按钮。',
       timestamp: Date.now(),
-      suggestions: ['分析当前方案', '推荐优化方案', '解释成本构成']
+      suggestions: ['分析当前方案', '识别瓶颈节点', '推荐优化方案']
     }
   ]);
-  const [inputMessage, setInputMessage] = useState('');
+  const [chatInput, setChatInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  // ===== 计算属性 =====
+  const currentKPI = kpiData[activeScenario] || kpiData.baseline;
+  const baselineKPI = kpiData.baseline;
+  const allScenarios = Object.keys(kpiData);
 
+  // ===== 推演图节点/边 =====
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  // 初始化推演图
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  // Send message handler
-  const handleSendMessage = async () => {
-    if (!inputMessage.trim()) return;
-
-    const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content: inputMessage,
-      timestamp: Date.now()
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInputMessage('');
-    setIsTyping(true);
-
-    // Simulate AI response
-    setTimeout(() => {
-      const response = generateAIResponse(inputMessage, comparisonResults, scenarios);
-      const assistantMessage: ChatMessage = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: response.content,
-        timestamp: Date.now(),
-        suggestions: response.suggestions
-      };
-      setMessages(prev => [...prev, assistantMessage]);
-      setIsTyping(false);
-    }, 1000 + Math.random() * 1000);
-  };
-
-  // Generate AI response based on context
-  const generateAIResponse = (
-    userInput: string,
-    results: typeof comparisonResults,
-    currentScenarios: ScenarioConfig[]
-  ): { content: string; suggestions?: string[] } => {
-    const input = userInput.toLowerCase();
-
-    // Check for specific intents
-    if (input.includes('分析') || input.includes('结果') || input.includes('对比')) {
-      if (results.length === 0) {
-        return {
-          content: '目前还没有推演结果。请先配置方案并运行推演，我就能为你分析结果了。',
-          suggestions: ['运行推演', '配置方案', '查看帮助']
-        };
-      }
-
-      const bestResult = results.filter(r => r.result).sort((a, b) => {
-        const aScore = (a.result?.totalCost || 0) + (a.result?.duration || 0) * 1000;
-        const bScore = (b.result?.totalCost || 0) + (b.result?.duration || 0) * 1000;
-        return aScore - bScore;
-      })[0];
-
-      return {
-        content: `根据当前的推演结果，我已经分析了 ${results.length} 个方案：\n\n**最优方案：${bestResult?.scenario.name}**\n- 总成本：¥${(bestResult?.result?.totalCost || 0).toLocaleString()}\n- 周期：${bestResult?.result?.duration || 0} 天\n\n与其他方案相比，该方案在成本和周期方面表现最佳。你可以点击"对比结果"标签查看详细对比。`,
-        suggestions: ['查看详细对比', '优化方案', '导出报告']
-      };
-    }
-
-    if (input.includes('推荐') || input.includes('优化') || input.includes('建议')) {
-      return {
-        content: '基于当前项目数据，我有以下优化建议：\n\n1. **资源配置**：考虑增加自动化设备资源，虽然初期成本增加，但可以显著缩短周期\n2. **并行工序**：识别可以并行执行的工序节点，减少关键路径长度\n3. **风险缓冲**：为高风险的非标工艺节点增加时间缓冲\n\n你可以创建新的方案来验证这些建议的效果。',
-        suggestions: ['创建新方案', '分析风险节点', '查看资源利用率']
-      };
-    }
-
-    if (input.includes('成本') || input.includes('价格') || input.includes('费用')) {
-      const totalCost = results.reduce((sum, r) => sum + (r.result?.totalCost || 0), 0);
-      return {
-        content: `当前推演结果的成本分析：\n\n- 基准方案成本：¥${(results[0]?.result?.totalCost || 0).toLocaleString()}\n- 所有方案平均成本：¥${totalCost > 0 ? Math.round(totalCost / results.length).toLocaleString() : '0'}\n\n成本主要由以下部分构成：\n- 人力资源成本\n- 设备使用成本\n- 物料采购成本\n- 外包加工成本\n\n你可以通过调整资源配置来优化成本结构。`,
-        suggestions: ['优化成本', '查看成本构成', '对比方案']
-      };
-    }
-
-    if (input.includes('周期') || input.includes('时间') || input.includes('工期')) {
-      const avgDuration = results.length > 0
-        ? results.reduce((sum, r) => sum + (r.result?.duration || 0), 0) / results.length
-        : 0;
-      return {
-        content: `项目周期分析：\n\n- 当前平均周期：${avgDuration.toFixed(1)} 天\n- 最短周期方案：${results.filter(r => r.result).sort((a, b) => (a.result?.duration || 0) - (b.result?.duration || 0))[0]?.scenario.name || '未计算'}\n\n缩短周期的建议：\n1. 增加关键路径上的资源投入\n2. 优化工序间的衔接，减少等待时间\n3. 对非关键路径上的任务适当延后，集中资源保证关键节点`,
-        suggestions: ['查看关键路径', '优化工期', '资源调度']
-      };
-    }
-
-    if (input.includes('帮助') || input.includes('help') || input.includes('能做什么')) {
-      return {
-        content: '我可以为你提供以下帮助：\n\n**推演分析**\n- 分析多方案对比结果\n- 推荐最优资源配置方案\n- 解释成本和周期的变化原因\n\n**决策支持**\n- 评估不同决策对项目的影响\n- 识别风险和瓶颈\n- 提供优化建议\n\n**数据解读**\n- 解释推演结果的各项指标\n- 对比不同方案的优劣\n- 生成分析报告\n\n你可以直接提问，或者点击下方的建议按钮快速开始。',
-        suggestions: ['分析当前方案', '推荐优化方案', '解释推演结果']
-      };
-    }
-
-    // Default response
-    return {
-      content: '我理解你的问题。为了更好地帮助你，能否提供更多细节？比如你想了解：\n- 当前推演方案的对比分析\n- 针对特定节点的优化建议\n- 成本和周期的详细构成\n\n或者你可以直接点击下方的建议按钮。',
-      suggestions: ['分析推演结果', '推荐优化方案', '查看成本分析']
-    };
-  };
-
-  // Add new scenario
-  const addScenario = () => {
-    if (scenarios.length >= 5) {
-      toast.error('最多支持5个方案对比');
-      return;
-    }
-    const newScenario: ScenarioConfig = {
-      id: `scenario_${Date.now()}`,
-      name: `方案 ${String.fromCharCode(65 + scenarios.length)}`,
-      description: '',
-      resourceChanges: [],
-      parameterOverrides: {}
-    };
-    setScenarios([...scenarios, newScenario]);
-  };
-
-  // Remove scenario
-  const removeScenario = (id: string) => {
-    if (id === 'base') {
-      toast.error('不能删除基准方案');
-      return;
-    }
-    setScenarios(scenarios.filter(s => s.id !== id));
-  };
-
-  // Update scenario
-  const updateScenario = (id: string, updates: Partial<ScenarioConfig>) => {
-    setScenarios(scenarios.map(s => s.id === id ? { ...s, ...updates } : s));
-  };
-
-  // Run simulation for a single node
-  const simulateNode = async (nodeId: string): Promise<any[]> => {
-    const selectedNode = project.nodes.find(n => n.id === nodeId);
-    if (!selectedNode) {
-      throw new Error(`节点 ${nodeId} 不存在`);
-    }
-
-    // Mock base context
-    const baseContext = {
-      nodeId: nodeId,
-      nodeType: selectedNode.type,
-      resources: selectedNode.resources.map(r => ({
-        ...INDUSTRIAL_RESOURCES[0],
-        id: r
-      })),
-      bindings: [],
-      inputs: {
-        duration: selectedNode.duration,
-        ...selectedNode.plannedCost
+    const processNodes: FlowNode[] = project.nodes.map((node, index) => ({
+      id: node.id,
+      type: 'default',
+      position: { x: 100 + index * 200, y: 200 },
+      data: {
+        label: node.name,
+        type: node.type,
+        baseline: { cost: node.plannedCost.total, duration: node.duration },
+        current: { cost: node.plannedCost.total * (1 + Math.random() * 0.2), duration: Math.max(1, node.duration + Math.floor(Math.random() * 4) - 2) }
       },
-      outputs: {},
-      metadata: {
-        projectId: project.id,
-        startTime: Date.now(),
-        version: '1.0'
-      }
-    };
-
-    // Create simulation scenarios
-    const simScenarios = scenarios.map(scenario => ({
-      name: scenario.name,
-      description: scenario.description,
-      resourceOverrides: scenario.resourceChanges.map(id =>
-        INDUSTRIAL_RESOURCES.find(r => r.id === id) || INDUSTRIAL_RESOURCES[0]
-      ).filter(Boolean),
-      contextOverrides: {
-        inputs: scenario.parameterOverrides
+      style: {
+        background: selectedNodeId === node.id ? '#3b82f6' : getNodeColor(node.type),
+        color: 'white',
+        borderRadius: '8px',
+        padding: '12px 20px',
+        fontSize: '12px',
+        fontWeight: 'bold',
+        minWidth: '140px',
+        border: selectedNodeId === node.id ? '3px solid #fff' : 'none',
+        boxShadow: selectedNodeId === node.id ? '0 0 20px rgba(59,130,246,0.5)' : '0 4px 12px rgba(0,0,0,0.2)',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease'
       }
     }));
 
-    // Run simulation
-    const batch = simulationEngine.createBatch(
-      nodeId,
-      baseContext as any,
-      simScenarios
-    );
+    const processEdges: FlowEdge[] = project.nodes.slice(1).map((node, index) => ({
+      id: `e${project.nodes[index].id}-${node.id}`,
+      source: project.nodes[index].id,
+      target: node.id,
+      markerEnd: { type: MarkerType.ArrowClosed },
+      style: { stroke: '#94a3b8', strokeWidth: 2 },
+      animated: selectedNodeId === project.nodes[index].id || selectedNodeId === node.id,
+      style: selectedNodeId && (selectedNodeId === project.nodes[index].id || selectedNodeId === node.id)
+        ? { stroke: '#ef4444', strokeWidth: 3 }
+        : { stroke: '#94a3b8', strokeWidth: 2 }
+    }));
 
-    const completedBatch = await simulationEngine.executeBatch(batch.id);
+    setNodes(processNodes);
+    setEdges(processEdges);
+  }, [project.nodes, selectedNodeId]);
 
-    // Process results
-    return scenarios.map((scenario, index) => {
-      const result = completedBatch.results?.[index] || null;
-      const baseResult = completedBatch.results?.[0];
+  // ===== 辅助函数 =====
+  function getNodeColor(type: string): string {
+    const colors: Record<string, string> = {
+      project: '#3b82f6',
+      process: '#f97316',
+      man: '#22c55e',
+      machine: '#10b981',
+      material: '#a855f7',
+      method: '#6366f1',
+      environment: '#06b6d4',
+      measurement: '#ec4899'
+    };
+    return colors[type] || '#64748b';
+  }
 
-      return {
-        nodeId,
-        nodeName: selectedNode.name,
-        scenario,
-        result,
-        delta: result && baseResult ? {
-          cost: (result.totalCost || 0) - (baseResult.totalCost || 0),
-          duration: (result.duration || 0) - (baseResult.duration || 0)
-        } : undefined
-      };
-    });
-  };
-
-  // Run simulation
-  const handleSimulate = async () => {
-    if (!selectedNodeId && !selectAllNodes) {
-      toast.error('请先选择一个节点');
-      return;
+  function getRiskColor(risk: string): string {
+    switch (risk) {
+      case '低': return 'text-green-600 bg-green-50';
+      case '中': return 'text-yellow-600 bg-yellow-50';
+      case '高': return 'text-red-600 bg-red-50';
+      default: return 'text-gray-600 bg-gray-50';
     }
+  }
 
+  // ===== 推演执行 =====
+  const runSimulation = useCallback(async () => {
     setIsSimulating(true);
-    setActiveTab('results');
+    toast.info(`正在推演 ${scenarios.find(s => s.id === activeScenario)?.name}...`);
 
-    try {
-      let allResults: any[] = [];
+    // 模拟推演延迟
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
-      if (selectAllNodes) {
-        // Simulate all nodes
-        for (const node of project.nodes) {
-          const nodeResults = await simulateNode(node.id);
-          allResults = [...allResults, ...nodeResults];
+    // 更新KPI数据
+    const newKPI: KPI = {
+      cost: baselineKPI.cost * (1 + (Math.random() * 0.3 - 0.1)),
+      duration: Math.max(20, Math.floor(baselineKPI.duration * (1 + (Math.random() * 0.2 - 0.1)))),
+      profit: Math.max(10, Math.floor(baselineKPI.profit + (Math.random() * 6 - 3))),
+      risk: Math.random() > 0.6 ? '高' : Math.random() > 0.3 ? '中' : '低'
+    };
+
+    setKpiData(prev => ({ ...prev, [activeScenario]: newKPI }));
+    setIsSimulating(false);
+    toast.success('推演完成！');
+  }, [activeScenario, baselineKPI, scenarios]);
+
+  // ===== 聊天功能 =====
+  const handleSendChat = () => {
+    if (!chatInput.trim()) return;
+
+    const userMsg: ChatMessage = {
+      id: `u-${Date.now()}`,
+      role: 'user',
+      content: chatInput,
+      timestamp: Date.now()
+    };
+
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatInput('');
+    setIsTyping(true);
+
+    // 模拟AI回复
+    setTimeout(() => {
+      const responses: Record<string, string> = {
+        '分析': `基于当前推演结果分析：\n\n**${scenarios.find(s => s.id === activeScenario)?.name}**\n• 成本：¥${currentKPI.cost.toLocaleString()}\n• 周期：${currentKPI.duration}天\n• 利润：${currentKPI.profit}%\n• 风险：${currentKPI.risk}\n\n与Baseline相比：\n• 成本变化：${((currentKPI.cost - baselineKPI.cost) / baselineKPI.cost * 100).toFixed(1)}%\n• 周期变化：${currentKPI.duration - baselineKPI.duration}天`,
+        '瓶颈': '通过分析推演数据，识别出以下瓶颈节点：\n\n1. **焊接节点** - 关键路径\n   - 当前配置下周期较长\n   - 建议增加1台焊机\n\n2. **机加工序** - 资源受限\n   - 设备利用率过高\n   - 建议考虑部分外协',
+        '优化': '推荐以下优化方案：\n\n**方案A - 增加资源**\n• 增加1台焊机\n• 预期：周期-2天，成本+10万\n\n**方案B - 并行优化**\n• 调整工序并行策略\n• 预期：周期-4天，风险+10%\n\n**方案C - 混合策略**\n• 部分外协+资源增加\n• 预期：周期-6天，成本+15万'
+      };
+
+      let replyContent = '我理解你的问题。请尝试询问：\n• "分析当前方案"\n• "识别瓶颈节点"\n• "推荐优化方案"';
+
+      for (const [key, value] of Object.entries(responses)) {
+        if (chatInput.includes(key)) {
+          replyContent = value;
+          break;
         }
-        toast.success(`全部 ${project.nodes.length} 个节点推演完成`);
-      } else if (selectedNodeId) {
-        // Simulate single node
-        const nodeResults = await simulateNode(selectedNodeId);
-        allResults = nodeResults;
-        toast.success('推演完成');
       }
 
-      // For display, aggregate results by scenario
-      const aggregatedByScenario = scenarios.map(scenario => {
-        const scenarioResults = allResults.filter(r => r.scenario.id === scenario.id);
-        const totalCost = scenarioResults.reduce((sum, r) => sum + (r.result?.totalCost || 0), 0);
-        const totalDuration = scenarioResults.reduce((sum, r) => sum + (r.result?.duration || 0), 0);
+      const aiMsg: ChatMessage = {
+        id: `a-${Date.now()}`,
+        role: 'assistant',
+        content: replyContent,
+        timestamp: Date.now(),
+        suggestions: ['查看详细对比', '应用推荐方案', '导出分析报告']
+      };
 
-        return {
-          scenario,
-          result: {
-            totalCost,
-            duration: totalDuration,
-            status: 'success'
-          } as AggregatedResult,
-          nodeCount: scenarioResults.length,
-          delta: undefined
-        };
-      });
-
-      setComparisonResults(aggregatedByScenario);
-    } catch (error) {
-      toast.error('推演失败: ' + (error instanceof Error ? error.message : '未知错误'));
-    } finally {
-      setIsSimulating(false);
-    }
+      setChatMessages(prev => [...prev, aiMsg]);
+      setIsTyping(false);
+    }, 1200);
   };
 
+  // ===== 应用方案 =====
+  const applyScenario = () => {
+    toast.success(`已应用 ${scenarios.find(s => s.id === activeScenario)?.name}`);
+    // TODO: 写回项目节点数据
+  };
+
+  // ===== 渲染 =====
   return (
-    <div className="h-full flex flex-col space-y-4">
-      {/* Header */}
-      <div className="flex justify-between items-center bg-card p-4 border border-border">
-        <div>
-          <h2 className="font-serif text-xl font-medium">推演与决策中心</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            多方案对比推演 - Skill Runtime引擎驱动
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <select
-            value={selectAllNodes ? '__ALL__' : (selectedNodeId || '')}
-            onChange={(e) => {
-              const value = e.target.value;
-              if (value === '__ALL__') {
-                setSelectAllNodes(true);
-                setSelectedNodeId(null);
-              } else {
-                setSelectAllNodes(false);
-                setSelectedNodeId(value);
-              }
-            }}
-            className="bg-background border border-border px-3 py-2 text-sm font-mono rounded-none"
-          >
-            <option value="">选择节点...</option>
-            <option value="__ALL__">全部节点 ({project.nodes.length})</option>
-            {project.nodes.map(node => (
-              <option key={node.id} value={node.id}>
-                {node.id} - {node.name}
-              </option>
+    <div className="h-full flex flex-col gap-3 p-4">
+      {/* ==================== 顶部：项目选择 + 场景切换 + KPI总览 ==================== */}
+      <div className="bg-card border border-border p-3 flex items-center justify-between">
+        <div className="flex items-center gap-6">
+          {/* 项目选择 */}
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm font-medium">脱硫塔项目</span>
+          </div>
+
+          {/* 场景切换 */}
+          <div className="flex items-center gap-1 bg-muted p-1 rounded">
+            {scenarios.map(scenario => (
+              <button
+                key={scenario.id}
+                onClick={() => setActiveScenario(scenario.id)}
+                className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
+                  activeScenario === scenario.id
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {scenario.isBaseline ? 'Baseline' : scenario.name.split(' - ')[0]}
+              </button>
             ))}
-          </select>
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-            <TabsList className="rounded-none">
-              <TabsTrigger value="setup" className="rounded-none text-xs font-mono">
-                <Settings className="w-3 h-3 mr-1" /> 方案配置
-              </TabsTrigger>
-              <TabsTrigger value="results" className="rounded-none text-xs font-mono">
-                <BarChart3 className="w-3 h-3 mr-1" /> 对比结果
-              </TabsTrigger>
-              <TabsTrigger value="chat" className="rounded-none text-xs font-mono">
-                <MessageSquare className="w-3 h-3 mr-1" /> 推演助手
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          </div>
+        </div>
+
+        {/* KPI总览 */}
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <Coins className="w-4 h-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">成本</span>
+            <span className="text-sm font-mono font-bold">¥{(currentKPI.cost / 10000).toFixed(0)}万</span>
+            {currentKPI.cost !== baselineKPI.cost && (
+              <Badge variant="outline" className={`text-[10px] ${currentKPI.cost > baselineKPI.cost ? 'text-red-600' : 'text-green-600'}`}>
+                {currentKPI.cost > baselineKPI.cost ? '+' : ''}{((currentKPI.cost - baselineKPI.cost) / baselineKPI.cost * 100).toFixed(1)}%
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">周期</span>
+            <span className="text-sm font-mono font-bold">{currentKPI.duration}天</span>
+            {currentKPI.duration !== baselineKPI.duration && (
+              <Badge variant="outline" className={`text-[10px] ${currentKPI.duration < baselineKPI.duration ? 'text-green-600' : 'text-red-600'}`}>
+                {currentKPI.duration > baselineKPI.duration ? '+' : ''}{currentKPI.duration - baselineKPI.duration}天
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">利润</span>
+            <span className="text-sm font-mono font-bold">{currentKPI.profit}%</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">风险</span>
+            <span className={`text-xs px-2 py-0.5 rounded ${getRiskColor(currentKPI.risk)}`}>
+              {currentKPI.risk}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      {activeTab === 'setup' ? (
-        <div className="flex-1 flex gap-4 overflow-hidden">
-          {/* Left: Scenario List */}
-          <div className="w-80 flex flex-col gap-4">
-            <Card className="flex-1 rounded-none border-border shadow-none overflow-hidden">
-              <CardHeader className="p-3 border-b border-border bg-muted/20 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm font-mono uppercase tracking-wider">
-                  推演方案 ({scenarios.length})
-                </CardTitle>
-                <Button variant="outline" size="sm" className="h-7 text-xs rounded-none" onClick={addScenario}>
-                  <Plus className="w-3 h-3 mr-1" /> 添加
-                </Button>
-              </CardHeader>
-              <CardContent className="p-0 overflow-auto">
-                <div className="divide-y divide-border">
-                  {scenarios.map((scenario, index) => (
-                    <div
-                      key={scenario.id}
-                      className={`p-3 ${index === 0 ? 'bg-primary/5' : 'hover:bg-muted/30'} transition-colors`}
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Badge variant={index === 0 ? 'default' : 'outline'} className="text-[10px] rounded-none">
-                            {index === 0 ? '基准' : `方案 ${String.fromCharCode(64 + index)}`}
-                          </Badge>
-                          {index > 0 && (
-                            <button
-                              onClick={() => removeScenario(scenario.id)}
-                              className="text-muted-foreground hover:text-destructive"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <input
-                        type="text"
-                        value={scenario.name}
-                        onChange={(e) => updateScenario(scenario.id, { name: e.target.value })}
-                        className="w-full bg-transparent border-none p-0 text-sm font-medium focus:outline-none focus:ring-0"
-                        placeholder="方案名称"
-                      />
-                      <textarea
-                        value={scenario.description}
-                        onChange={(e) => updateScenario(scenario.id, { description: e.target.value })}
-                        className="w-full bg-transparent border-none p-0 text-xs text-muted-foreground resize-none focus:outline-none focus:ring-0 mt-1"
-                        placeholder="方案描述..."
-                        rows={2}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Run Button */}
-            <Button
-              onClick={handleSimulate}
-              disabled={isSimulating || (!selectedNodeId && !selectAllNodes)}
-              className="w-full h-12 rounded-none font-mono uppercase tracking-wider"
-            >
-              {isSimulating ? (
-                <>
-                  <Activity className="w-4 h-4 mr-2 animate-spin" />
-                  推演中...
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 mr-2" />
-                  运行推演 ({scenarios.length}方案)
-                </>
-              )}
-            </Button>
-          </div>
-
-          {/* Right: Resource Selection */}
-          <Card className="flex-1 rounded-none border-border shadow-none overflow-hidden">
-            <CardHeader className="p-3 border-b border-border bg-muted/20">
-              <CardTitle className="text-sm font-mono uppercase tracking-wider">
-                资源配置差异
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 overflow-auto">
-              {!selectedNodeId ? (
-                <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                  <Info className="w-8 h-8 mb-2 opacity-20" />
-                  <p className="text-sm">请先选择一个节点进行推演</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {scenarios.map((scenario, index) => (
-                    <div key={scenario.id} className="border border-border p-3 bg-card">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Badge variant={index === 0 ? 'default' : 'outline'} className="text-[10px] rounded-none">
-                          {index === 0 ? '基准' : `方案 ${String.fromCharCode(64 + index)}`}
-                        </Badge>
-                        <span className="text-sm font-medium">{scenario.name}</span>
-                      </div>
-
-                      {/* Resource Selection */}
-                      <div className="space-y-2">
-                        <div className="text-xs text-muted-foreground">调整资源:</div>
-                        <div className="flex flex-wrap gap-1">
-                          {INDUSTRIAL_RESOURCES.slice(0, 10).map(resource => (
-                            <button
-                              key={resource.id}
-                              onClick={() => {
-                                const current = scenario.resourceChanges;
-                                const updated = current.includes(resource.id)
-                                  ? current.filter(id => id !== resource.id)
-                                  : [...current, resource.id];
-                                updateScenario(scenario.id, { resourceChanges: updated });
-                              }}
-                              className={`text-[10px] px-2 py-1 border transition-colors ${
-                                scenario.resourceChanges.includes(resource.id)
-                                  ? 'bg-primary text-primary-foreground border-primary'
-                                  : 'bg-muted border-border hover:border-primary/50'
-                              }`}
-                            >
-                              {resource.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      ) : (
-        /* Results Tab */
-        <div className="flex-1 flex gap-4 overflow-hidden">
-          {/* Comparison Table */}
-          <Card className="flex-1 rounded-none border-border shadow-none overflow-hidden">
-            <CardHeader className="p-3 border-b border-border bg-muted/20 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-mono uppercase tracking-wider">
-                <GitCompare className="w-4 h-4 inline mr-2" />
-                方案对比结果
-              </CardTitle>
-              {isSimulating && (
-                <div className="flex items-center gap-2 text-xs text-primary">
-                  <Activity className="w-3 h-3 animate-spin" />
-                  计算中...
-                </div>
-              )}
-            </CardHeader>
-            <CardContent className="p-0 overflow-auto">
-              {comparisonResults.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                  <BarChart3 className="w-12 h-12 mb-4 opacity-20" />
-                  <p className="text-sm">请先运行推演</p>
-                </div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50 text-xs font-mono uppercase sticky top-0">
-                    <tr>
-                      <th className="px-4 py-3 text-left">方案</th>
-                      <th className="px-4 py-3 text-right">总成本</th>
-                      <th className="px-4 py-3 text-right">周期</th>
-                      <th className="px-4 py-3 text-center">vs 基准</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {comparisonResults.map(({ scenario, result, delta }, index) => (
-                      <tr key={scenario.id} className={index === 0 ? 'bg-primary/5' : 'hover:bg-muted/30'}>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <Badge variant={index === 0 ? 'default' : 'outline'} className="text-[10px] rounded-none">
-                              {index === 0 ? '基准' : `方案 ${String.fromCharCode(64 + index)}`}
-                            </Badge>
-                            <div>
-                              <div className="font-medium">{scenario.name}</div>
-                              <div className="text-xs text-muted-foreground">{scenario.description}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono">
-                          {result ? (
-                            <>
-                              <div className="font-semibold">¥{(result.totalCost || 0).toLocaleString()}</div>
-                              {result.breakdown && (
-                                <div className="text-[10px] text-muted-foreground mt-1">
-                                  {Object.entries(result.breakdown)
-                                    .filter(([_, v]) => v && v > 0)
-                                    .slice(0, 2)
-                                    .map(([k, v]) => `${k}: ¥${(v || 0).toLocaleString()}`)
-                                    .join(', ')}
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono">
-                          {result ? `${result.duration || 0} 天` : '-'}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {delta ? (
-                            <div className="flex flex-col items-center gap-1">
-                              <Badge
-                                variant="outline"
-                                className={`text-[10px] rounded-none ${
-                                  delta.cost > 0 ? 'text-destructive border-destructive' : 'text-green-600 border-green-600'
-                                }`}
-                              >
-                                {delta.cost > 0 ? '+' : ''}¥{delta.cost.toLocaleString()}
-                              </Badge>
-                              <Badge
-                                variant="outline"
-                                className={`text-[10px] rounded-none ${
-                                  delta.duration > 0 ? 'text-destructive border-destructive' : 'text-green-600 border-green-600'
-                                }`}
-                              >
-                                {delta.duration > 0 ? '+' : ''}{delta.duration}天
-                              </Badge>
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-muted-foreground">基准</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Right: Impact Analysis */}
-          <Card className="w-80 rounded-none border-border shadow-none overflow-hidden">
-            <CardHeader className="p-3 border-b border-border bg-muted/20">
-              <CardTitle className="text-sm font-mono uppercase tracking-wider">
-                影响分析
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 overflow-auto space-y-4">
-              {comparisonResults.length > 1 ? (
-                <>
-                  {/* Best Option */}
-                  <div className="p-3 bg-green-500/5 border border-green-500/20">
-                    <div className="text-[10px] text-green-600 font-mono uppercase mb-1">最优方案</div>
-                    {(() => {
-                      const validResults = comparisonResults.filter(r => r.result);
-                      if (validResults.length === 0) return <div className="text-sm text-muted-foreground">计算中...</div>;
-
-                      const best = validResults.reduce((best, current) => {
-                        const bestScore = (best.result?.totalCost || 0) + (best.result?.duration || 0) * 1000;
-                        const currentScore = (current.result?.totalCost || 0) + (current.result?.duration || 0) * 1000;
-                        return currentScore < bestScore ? current : best;
-                      });
-
-                      return (
-                        <>
-                          <div className="font-medium">{best.scenario.name}</div>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            成本: ¥{(best.result?.totalCost || 0).toLocaleString()}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            周期: {best.result?.duration || 0} 天
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Impact Path */}
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-2">资源变化影响路径:</div>
-                    <div className="space-y-2 text-xs">
-                      {comparisonResults.slice(1).map(({ scenario, delta }) => (
-                        <div key={scenario.id} className="p-2 bg-muted/30 border border-border">
-                          <div className="font-medium mb-1">{scenario.name}</div>
-                          {scenario.resourceChanges.length > 0 && (
-                            <div className="text-[10px] text-muted-foreground mb-1">
-                              资源: {scenario.resourceChanges.length} 个变更
-                            </div>
-                          )}
-                          {delta && (
-                            <div className="space-y-0.5">
-                              {delta.cost !== 0 && (
-                                <div className={`flex justify-between ${delta.cost > 0 ? 'text-destructive' : 'text-green-600'}`}>
-                                  <span>成本影响:</span>
-                                  <span>{delta.cost > 0 ? '+' : ''}¥{delta.cost.toLocaleString()}</span>
-                                </div>
-                              )}
-                              {delta.duration !== 0 && (
-                                <div className={`flex justify-between ${delta.duration > 0 ? 'text-destructive' : 'text-green-600'}`}>
-                                  <span>周期影响:</span>
-                                  <span>{delta.duration > 0 ? '+' : ''}{delta.duration}天</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="pt-4 border-t border-border space-y-2">
-                    <Button
-                      variant="outline"
-                      className="w-full rounded-none text-xs"
-                      onClick={() => setActiveTab('setup')}
-                    >
-                      <RotateCcw className="w-3 h-3 mr-1" />
-                      重新配置
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <div className="text-sm text-muted-foreground text-center py-8">
-                  请先运行推演查看影响分析
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      ) : activeTab === 'chat' ? (
-        /* Chat Tab */
-        <div className="flex-1 flex gap-4 overflow-hidden">
-          {/* Left: Chat Interface */}
-          <Card className="flex-1 rounded-none border-border shadow-none overflow-hidden flex flex-col">
-            <CardHeader className="p-3 border-b border-border bg-muted/20 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-mono uppercase tracking-wider flex items-center gap-2">
-                <Bot className="w-4 h-4" />
-                推演助手
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-[10px] rounded-none">
-                  AI Powered
-                </Badge>
+      {/* ==================== 主体：左-中-右三栏布局 ==================== */}
+      <div className="flex-1 flex gap-3 min-h-0">
+        {/* ===== 左侧：参数与场景构建器 ===== */}
+        <Card className="w-72 flex flex-col rounded-none border-border shadow-none overflow-hidden">
+          <CardHeader className="p-3 border-b border-border bg-muted/20">
+            <CardTitle className="text-sm font-mono uppercase tracking-wider flex items-center gap-2">
+              <Settings className="w-4 h-4" />
+              参数配置
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 overflow-auto space-y-4 flex-1">
+            {/* 资源类 */}
+            <div className="space-y-2">
+              <div className="text-[10px] font-mono uppercase text-muted-foreground flex items-center gap-1">
+                <Zap className="w-3 h-3" /> 资源类
               </div>
-            </CardHeader>
-            <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
-              {/* Messages */}
-              <div className="flex-1 overflow-auto p-4 space-y-4">
-                {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
-                  >
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                        message.role === 'user'
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-blue-500 text-white'
-                      }`}
-                    >
-                      {message.role === 'user' ? (
-                        <User className="w-4 h-4" />
-                      ) : (
-                        <Bot className="w-4 h-4" />
-                      )}
-                    </div>
-                    <div className={`flex-1 ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
-                      <div
-                        className={`max-w-[80%] p-3 text-sm whitespace-pre-wrap ${
-                          message.role === 'user'
-                            ? 'bg-primary text-primary-foreground rounded-2xl rounded-tr-sm'
-                            : 'bg-muted rounded-2xl rounded-tl-sm'
-                        }`}
-                      >
-                        {message.content}
-                      </div>
-                      {message.suggestions && message.suggestions.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {message.suggestions.map((suggestion, idx) => (
-                            <button
-                              key={idx}
-                              onClick={() => {
-                                setInputMessage(suggestion);
-                              }}
-                              className="text-xs px-3 py-1.5 bg-background border border-border hover:border-primary hover:text-primary transition-colors rounded-full"
-                            >
-                              {suggestion}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <div className="text-[10px] text-muted-foreground mt-1 px-1">
-                        {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
+              <div className="space-y-2">
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span>焊工数量</span>
+                    <span className="font-mono">{paramOverrides.welders}人</span>
                   </div>
-                ))}
-                {isTyping && (
-                  <div className="flex gap-3">
-                    <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shrink-0">
-                      <Bot className="w-4 h-4" />
-                    </div>
-                    <div className="bg-muted rounded-2xl rounded-tl-sm p-3">
-                      <div className="flex gap-1">
-                        <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" />
-                        <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
-                        <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Input Area */}
-              <div className="p-4 border-t border-border bg-muted/20">
-                <div className="flex gap-2">
                   <input
-                    type="text"
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    placeholder="输入消息询问推演相关问题..."
-                    className="flex-1 bg-background border border-border px-4 py-2 text-sm rounded-none focus:outline-none focus:ring-1 focus:ring-primary"
+                    type="range"
+                    min={1}
+                    max={10}
+                    value={paramOverrides.welders}
+                    onChange={(e) => setParamOverrides(prev => ({ ...prev, welders: parseInt(e.target.value) }))}
+                    className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer"
                   />
-                  <Button
-                    onClick={handleSendMessage}
-                    disabled={!inputMessage.trim() || isTyping}
-                    className="rounded-none px-4"
-                  >
-                    <Send className="w-4 h-4" />
-                  </Button>
                 </div>
-                <div className="flex gap-2 mt-2 text-[10px] text-muted-foreground">
-                  <span>快捷提问:</span>
-                  {['分析推演结果', '推荐优化方案', '解释成本构成'].map((quick) => (
-                    <button
-                      key={quick}
-                      onClick={() => {
-                        setInputMessage(quick);
-                      }}
-                      className="hover:text-primary transition-colors"
-                    >
-                      {quick}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Right: Quick Actions & Context */}
-          <Card className="w-80 rounded-none border-border shadow-none overflow-hidden">
-            <CardHeader className="p-3 border-b border-border bg-muted/20">
-              <CardTitle className="text-sm font-mono uppercase tracking-wider">
-                上下文信息
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 overflow-auto space-y-4">
-              {/* Current Status */}
-              <div className="p-3 bg-muted/30 border border-border">
-                <div className="text-[10px] text-muted-foreground font-mono uppercase mb-2">当前状态</div>
-                <div className="space-y-1 text-xs">
-                  <div className="flex justify-between">
-                    <span>选中节点:</span>
-                    <span className="font-medium">
-                      {selectAllNodes ? '全部' : (selectedNodeId ? project.nodes.find(n => n.id === selectedNodeId)?.name || selectedNodeId : '未选择')}
-                    </span>
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span>焊机数量</span>
+                    <span className="font-mono">{paramOverrides.machines}台</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span>方案数量:</span>
-                    <span className="font-medium">{scenarios.length} 个</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>推演状态:</span>
-                    <span className={`font-medium ${comparisonResults.length > 0 ? 'text-green-600' : 'text-muted-foreground'}`}>
-                      {comparisonResults.length > 0 ? '已完成' : '未开始'}
-                    </span>
-                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={5}
+                    value={paramOverrides.machines}
+                    onChange={(e) => setParamOverrides(prev => ({ ...prev, machines: parseInt(e.target.value) }))}
+                    className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer"
+                  />
                 </div>
               </div>
+            </div>
 
-              {/* Quick Actions */}
-              <div>
-                <div className="text-[10px] text-muted-foreground font-mono uppercase mb-2">快捷操作</div>
-                <div className="space-y-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full rounded-none text-xs justify-start"
-                    onClick={() => {
-                      setActiveTab('setup');
-                    }}
-                    disabled={isSimulating}
-                  >
-                    <Settings className="w-3 h-3 mr-2" />
-                    配置方案
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full rounded-none text-xs justify-start"
-                    onClick={() => {
-                      setActiveTab('results');
-                    }}
-                    disabled={comparisonResults.length === 0}
-                  >
-                    <BarChart3 className="w-3 h-3 mr-2" />
-                    查看结果
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full rounded-none text-xs justify-start"
-                    onClick={handleSimulate}
-                    disabled={isSimulating || (!selectedNodeId && !selectAllNodes)}
-                  >
-                    {isSimulating ? (
-                      <Activity className="w-3 h-3 mr-2 animate-spin" />
-                    ) : (
-                      <Play className="w-3 h-3 mr-2" />
-                    )}
-                    {isSimulating ? '推演中...' : '运行推演'}
-                  </Button>
+            {/* 成本类 */}
+            <div className="space-y-2">
+              <div className="text-[10px] font-mono uppercase text-muted-foreground flex items-center gap-1">
+                <DollarSign className="w-3 h-3" /> 成本类
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span>材料价格系数</span>
+                    <span className="font-mono">{paramOverrides.materialPrice.toFixed(1)}x</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={2}
+                    step={0.1}
+                    value={paramOverrides.materialPrice}
+                    onChange={(e) => setParamOverrides(prev => ({ ...prev, materialPrice: parseFloat(e.target.value) }))}
+                    className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span>外协价格系数</span>
+                    <span className="font-mono">{paramOverrides.outsourcingRate.toFixed(1)}x</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.8}
+                    max={2}
+                    step={0.1}
+                    value={paramOverrides.outsourcingRate}
+                    onChange={(e) => setParamOverrides(prev => ({ ...prev, outsourcingRate: parseFloat(e.target.value) }))}
+                    className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer"
+                  />
                 </div>
               </div>
+            </div>
 
-              {/* Tips */}
-              <div className="p-3 bg-blue-50 border border-blue-200">
-                <div className="text-[10px] text-blue-600 font-mono uppercase mb-2">使用提示</div>
-                <ul className="text-xs text-blue-900 space-y-1">
-                  <li>• 可以直接询问推演结果分析</li>
-                  <li>• 点击建议按钮快速提问</li>
-                  <li>• 助手会根据当前数据给出建议</li>
-                  <li>• 运行推演后可以获得详细分析</li>
-                </ul>
+            {/* 风险类 */}
+            <div className="space-y-2">
+              <div className="text-[10px] font-mono uppercase text-muted-foreground flex items-center gap-1">
+                <Shield className="w-3 h-3" /> 风险类
               </div>
+              <div className="space-y-2">
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span>返工率</span>
+                    <span className="font-mono">{(paramOverrides.reworkRate * 100).toFixed(0)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={0.3}
+                    step={0.01}
+                    value={paramOverrides.reworkRate}
+                    onChange={(e) => setParamOverrides(prev => ({ ...prev, reworkRate: parseFloat(e.target.value) }))}
+                    className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span>延误概率</span>
+                    <span className="font-mono">{(paramOverrides.delayProbability * 100).toFixed(0)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={0.5}
+                    step={0.05}
+                    value={paramOverrides.delayProbability}
+                    onChange={(e) => setParamOverrides(prev => ({ ...prev, delayProbability: parseFloat(e.target.value) }))}
+                    className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
 
-              {/* Clear Chat */}
-              {messages.length > 1 && (
+            {/* 场景操作 */}
+            <div className="pt-4 border-t border-border space-y-2">
+              <Button
+                size="sm"
+                className="w-full rounded-none text-xs"
+                onClick={runSimulation}
+                disabled={isSimulating}
+              >
+                {isSimulating ? (
+                  <Activity className="w-3 h-3 mr-1 animate-spin" />
+                ) : (
+                  <Play className="w-3 h-3 mr-1" />
+                )}
+                {isSimulating ? '推演中...' : '运行推演'}
+              </Button>
+              <div className="flex gap-2">
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  className="w-full rounded-none text-xs text-muted-foreground hover:text-destructive"
+                  className="flex-1 rounded-none text-xs"
                   onClick={() => {
-                    setMessages([messages[0]]);
+                    const newId = `scenario-${Date.now()}`;
+                    setScenarios(prev => [...prev, {
+                      id: newId,
+                      name: `方案${String.fromCharCode(65 + prev.length)}`,
+                      isBaseline: false,
+                      overrides: { ...paramOverrides }
+                    }]);
+                    toast.success('已复制为新方案');
+                  }}
+                >
+                  <Plus className="w-3 h-3 mr-1" />
+                  复制
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 rounded-none text-xs"
+                  disabled={scenarios.find(s => s.id === activeScenario)?.isBaseline}
+                  onClick={() => {
+                    setScenarios(prev => prev.filter(s => s.id !== activeScenario));
+                    setActiveScenario('baseline');
+                    toast.success('已删除方案');
                   }}
                 >
                   <X className="w-3 h-3 mr-1" />
-                  清空对话
+                  删除
                 </Button>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      ) : null}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ===== 中间：推演执行图 ===== */}
+        <Card className="flex-1 flex flex-col rounded-none border-border shadow-none overflow-hidden">
+          <CardHeader className="p-3 border-b border-border bg-muted/20 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-mono uppercase tracking-wider flex items-center gap-2">
+              <GitBranch className="w-4 h-4" />
+              推演执行图
+            </CardTitle>
+            <div className="flex bg-muted p-1 rounded">
+              {(['graph', 'gantt', 'costflow'] as ViewMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  className={`px-2 py-1 text-[10px] font-mono rounded transition-colors ${
+                    viewMode === mode
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {mode === 'graph' && 'Graph'}
+                  {mode === 'gantt' && 'Gantt'}
+                  {mode === 'costflow' && 'Cost Flow'}
+                </button>
+              ))}
+            </div>
+          </CardHeader>
+          <CardContent className="p-0 flex-1 relative">
+            <div className="w-full h-full absolute inset-0">
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+                onPaneClick={() => setSelectedNodeId(null)}
+                defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
+                minZoom={0.3}
+                maxZoom={2}
+                className="bg-slate-50"
+                style={{ width: '100%', height: '100%' }}
+                nodesDraggable={true}
+                elementsSelectable={true}
+                zoomOnScroll={true}
+                panOnDrag={true}
+                attributionPosition="bottom-right"
+              >
+                <Background color="#cbd5e1" gap={20} size={1} />
+                <Controls />
+              </ReactFlow>
+            </div>
+
+            {/* 选中节点详情浮窗 */}
+            {selectedNodeId && (
+              <div className="absolute bottom-4 left-4 right-4 bg-card border border-border p-4 shadow-lg">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <div className="text-sm font-bold">
+                      {project.nodes.find(n => n.id === selectedNodeId)?.name}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      ID: {selectedNodeId}
+                    </div>
+                  </div>
+                  <button onClick={() => setSelectedNodeId(null)} className="text-muted-foreground hover:text-foreground">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-4 text-xs">
+                  <div className="p-2 bg-muted/30">
+                    <div className="text-muted-foreground mb-1">Baseline</div>
+                    <div className="font-mono">
+                      <div>¥{(project.nodes.find(n => n.id === selectedNodeId)?.plannedCost.total || 0).toLocaleString()}</div>
+                      <div>{project.nodes.find(n => n.id === selectedNodeId)?.duration || 0}天</div>
+                    </div>
+                  </div>
+                  <div className="p-2 bg-blue-50 border border-blue-200">
+                    <div className="text-blue-600 mb-1">当前方案</div>
+                    <div className="font-mono text-blue-900">
+                      <div>¥{Math.floor((project.nodes.find(n => n.id === selectedNodeId)?.plannedCost.total || 0) * 1.1).toLocaleString()}</div>
+                      <div>{Math.max(1, (project.nodes.find(n => n.id === selectedNodeId)?.duration || 0) - 2)}天</div>
+                    </div>
+                  </div>
+                  <div className="p-2 bg-green-50 border border-green-200">
+                    <div className="text-green-600 mb-1">变化</div>
+                    <div className="font-mono text-green-900">
+                      <div>+10%</div>
+                      <div>-2天</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ===== 右侧：结果对比面板 ===== */}
+        <Card className="w-80 flex flex-col rounded-none border-border shadow-none overflow-hidden">
+          <CardHeader className="p-3 border-b border-border bg-muted/20">
+            <CardTitle className="text-sm font-mono uppercase tracking-wider flex items-center gap-2">
+              <GitCompare className="w-4 h-4" />
+              方案对比
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 overflow-auto flex-1 space-y-4">
+            {/* KPI对比表格 */}
+            <div className="border border-border">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-2 py-2 text-left font-mono">指标</th>
+                    {scenarios.slice(0, 3).map(s => (
+                      <th key={s.id} className="px-2 py-2 text-center font-mono">
+                        {s.isBaseline ? 'Baseline' : s.name.split(' - ')[0]}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  <tr>
+                    <td className="px-2 py-2 text-muted-foreground">成本</td>
+                    {scenarios.slice(0, 3).map(s => (
+                      <td key={s.id} className="px-2 py-2 text-center font-mono">
+                        ¥{(kpiData[s.id]?.cost / 10000 || 120).toFixed(0)}万
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="px-2 py-2 text-muted-foreground">周期</td>
+                    {scenarios.slice(0, 3).map(s => (
+                      <td key={s.id} className="px-2 py-2 text-center font-mono">
+                        {kpiData[s.id]?.duration || 32}天
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="px-2 py-2 text-muted-foreground">利润</td>
+                    {scenarios.slice(0, 3).map(s => (
+                      <td key={s.id} className="px-2 py-2 text-center font-mono">
+                        {kpiData[s.id]?.profit || 18}%
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="px-2 py-2 text-muted-foreground">风险</td>
+                    {scenarios.slice(0, 3).map(s => (
+                      <td key={s.id} className="px-2 py-2 text-center">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${getRiskColor(kpiData[s.id]?.risk || '中')}`}>
+                          {kpiData[s.id]?.risk || '中'}
+                        </span>
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* 变化来源 */}
+            <div className="p-3 bg-muted/20 border border-border">
+              <div className="text-[10px] font-mono uppercase text-muted-foreground mb-2">变化来源</div>
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">焊机折旧</span>
+                  <span className="text-red-600 font-mono">+¥2万</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">能耗增加</span>
+                  <span className="text-red-600 font-mono">+¥0.5万</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">人工节约</span>
+                  <span className="text-green-600 font-mono">-¥1万</span>
+                </div>
+                <div className="border-t border-border pt-1 mt-1 flex justify-between font-bold">
+                  <span>净变化</span>
+                  <span className="text-red-600 font-mono">+¥1.5万</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 图表 */}
+            <div className="h-32">
+              <div className="text-[10px] font-mono uppercase text-muted-foreground mb-1">成本对比</div>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={scenarios.slice(0, 3).map(s => ({
+                  name: s.isBaseline ? 'Baseline' : s.name.split(' - ')[0],
+                  cost: (kpiData[s.id]?.cost || 1200000) / 10000
+                }))}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <RechartsTooltip
+                    formatter={(value: number) => [`¥${value}万`, '成本']}
+                    contentStyle={{ fontSize: 12 }}
+                  />
+                  <Bar dataKey="cost" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* 周期对比图 */}
+            <div className="h-32">
+              <div className="text-[10px] font-mono uppercase text-muted-foreground mb-1">周期对比</div>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={scenarios.slice(0, 3).map(s => ({
+                  name: s.isBaseline ? 'Baseline' : s.name.split(' - ')[0],
+                  duration: kpiData[s.id]?.duration || 32
+                }))}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <RechartsTooltip
+                    formatter={(value: number) => [`${value}天`, '周期']}
+                    contentStyle={{ fontSize: 12 }}
+                  />
+                  <Bar dataKey="duration" fill="#10b981" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ==================== 底部：AI建议 + 决策操作区 ==================== */}
+      <div className="flex gap-3">
+        {/* AI建议 */}
+        <Card className="flex-1 rounded-none border-border shadow-none">
+          <CardHeader className="p-3 border-b border-border bg-muted/20">
+            <CardTitle className="text-sm font-mono uppercase tracking-wider flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-yellow-500" />
+              AI推演助手
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3">
+            <div className="flex gap-3">
+              {/* 风险节点 */}
+              <div className="flex-1 p-3 bg-red-50 border border-red-200">
+                <div className="text-[10px] text-red-600 font-mono uppercase mb-1">⚠️ 风险节点</div>
+                <div className="text-sm font-medium text-red-900">焊接工序</div>
+                <div className="text-xs text-red-700 mt-1">设备利用率98%，存在延误风险</div>
+              </div>
+              {/* 推荐方案 */}
+              <div className="flex-1 p-3 bg-blue-50 border border-blue-200">
+                <div className="text-[10px] text-blue-600 font-mono uppercase mb-1">💡 推荐方案</div>
+                <div className="text-sm font-medium text-blue-900">增加1台焊机</div>
+                <div className="text-xs text-blue-700 mt-1">预期：周期-2天，成本+10万</div>
+              </div>
+              {/* 影响预测 */}
+              <div className="flex-1 p-3 bg-green-50 border border-green-200">
+                <div className="text-[10px] text-green-600 font-mono uppercase mb-1">📈 影响预测</div>
+                <div className="text-sm font-medium text-green-900">利润提升2%</div>
+                <div className="text-xs text-green-700 mt-1">综合成本收益比1:1.5</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 决策按钮 */}
+        <Card className="w-96 rounded-none border-border shadow-none">
+          <CardHeader className="p-3 border-b border-border bg-muted/20">
+            <CardTitle className="text-sm font-mono uppercase tracking-wider">
+              决策操作
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3">
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                className="flex-1 rounded-none text-xs"
+                onClick={applyScenario}
+              >
+                <CheckCircle2 className="w-3 h-3 mr-1" />
+                应用方案
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 rounded-none text-xs"
+                onClick={() => toast.info('写回项目功能开发中...')}
+              >
+                <Save className="w-3 h-3 mr-1" />
+                写回项目
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 rounded-none text-xs"
+                onClick={() => toast.info('生成排产功能开发中...')}
+              >
+                <Calendar className="w-3 h-3 mr-1" />
+                生成排产
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-none text-xs px-2"
+                onClick={() => toast.info('导出报告功能开发中...')}
+              >
+                <Download className="w-3 h-3" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

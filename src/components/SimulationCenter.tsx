@@ -171,7 +171,6 @@ export function SimulationCenter({ project }: SimulationCenterProps) {
       source: project.nodes[index].id,
       target: node.id,
       markerEnd: { type: MarkerType.ArrowClosed },
-      style: { stroke: '#94a3b8', strokeWidth: 2 },
       animated: selectedNodeId === project.nodes[index].id || selectedNodeId === node.id,
       style: selectedNodeId && (selectedNodeId === project.nodes[index].id || selectedNodeId === node.id)
         ? { stroke: '#ef4444', strokeWidth: 3 }
